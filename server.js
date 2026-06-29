@@ -209,38 +209,67 @@ app.post('/api/reg-type', async (req, res) => {
   catch (err) { handleError(res, err); }
 });
 
+// ── Health (no Supabase) ─────────────────────────────────────────────────────
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    vercel: Boolean(process.env.VERCEL),
+    supabaseConfigured: Boolean(
+      (process.env.SUPABASE_URL || '').trim() &&
+      (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
+    ),
+  });
+});
+
 // ── Start ────────────────────────────────────────────────────────────────────
 
-async function startServer() {
-  await seedDefaultCompanySettings();
-
-  startInvoiceSubmissionWorker();
-
-  app.listen(PORT, () => {
-    console.log(`FBR DI Web App running at http://localhost:${PORT}`);
-    console.log(`Environment : ${DEFAULT_ENV.toUpperCase()} (default, switchable from UI)`);
-    console.log(`App mode    : ${APP_MODE}${isPlanetiveMode() ? ' (SN019 services workflow)' : ''}`);
-    console.log(`Token set   : ${TOKEN.length > 0 ? 'YES' : 'NO — set FBR_BEARER_TOKEN in .env'}`);
-    if (getMockConfig().enabled) {
-      const mock = getMockConfig();
-      console.log('FBR mock    : ON (invoice submit/validate return fake responses)');
-      if (mock.fail) {
-        console.log('FBR mock    : FAIL=ON (every attempt simulates network error → retry queue)');
-      }
-      if (mock.failUntilRetry > 0) {
-        console.log(`FBR mock    : FAIL_UNTIL_RETRY=${mock.failUntilRetry} (fail until retry count reaches this)`);
-      }
-      if (mock.delayMs > 0) {
-        console.log(`FBR mock    : DELAY=${mock.delayMs}ms (watch queued → processing in History)`);
-      }
-      if (mock.scenario !== 'valid') {
-        console.log(`FBR mock    : SCENARIO=${mock.scenario}`);
-      }
+function logStartupBanner() {
+  console.log(`Environment : ${DEFAULT_ENV.toUpperCase()} (default, switchable from UI)`);
+  console.log(`App mode    : ${APP_MODE}${isPlanetiveMode() ? ' (SN019 services workflow)' : ''}`);
+  console.log(`Token set   : ${TOKEN.length > 0 ? 'YES' : 'NO — set FBR_BEARER_TOKEN in .env'}`);
+  if (getMockConfig().enabled) {
+    const mock = getMockConfig();
+    console.log('FBR mock    : ON (invoice submit/validate return fake responses)');
+    if (mock.fail) {
+      console.log('FBR mock    : FAIL=ON (every attempt simulates network error → retry queue)');
     }
-  });
+    if (mock.failUntilRetry > 0) {
+      console.log(`FBR mock    : FAIL_UNTIL_RETRY=${mock.failUntilRetry} (fail until retry count reaches this)`);
+    }
+    if (mock.delayMs > 0) {
+      console.log(`FBR mock    : DELAY=${mock.delayMs}ms (watch queued → processing in History)`);
+    }
+    if (mock.scenario !== 'valid') {
+      console.log(`FBR mock    : SCENARIO=${mock.scenario}`);
+    }
+  }
 }
 
-startServer().catch(err => {
-  console.error('Failed to start server:', err.message);
-  process.exit(1);
-});
+async function bootstrap() {
+  await seedDefaultCompanySettings();
+
+  // Background polling worker does not run reliably on Vercel serverless.
+  if (process.env.VERCEL) {
+    console.log('[worker] Skipped on Vercel — set WORKER_ENABLED=false or use Railway/Render for queue processing');
+  } else {
+    startInvoiceSubmissionWorker();
+  }
+}
+
+if (process.env.VERCEL) {
+  bootstrap().catch(err => console.error('Bootstrap failed:', err.message));
+  module.exports = app;
+} else {
+  bootstrap()
+    .then(() => {
+      app.listen(PORT, () => {
+        console.log(`FBR DI Web App running at http://localhost:${PORT}`);
+        logStartupBanner();
+      });
+    })
+    .catch(err => {
+      console.error('Failed to start server:', err.message);
+      process.exit(1);
+    });
+}
