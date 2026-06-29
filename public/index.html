@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FBR Digital Invoicing – DI API v1.12</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+
+<div class="app-shell">
+
+<!-- ── Topbar ─────────────────────────────────────────────────────────────── -->
+<header class="topbar">
+  <div class="topbar-inner">
+    <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="Open menu"><i data-lucide="menu"></i></button>
+    <div class="topbar-brand">
+      <img src="/logo.jpeg" alt="Planetive" class="brand-logo" />
+      <div class="topbar-title-wrap">
+        <span class="topbar-title">FBR Digital Invoicing</span>
+        <span class="topbar-subtitle">A Planetive Project</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="env-toggle" title="Switch environment (no restart needed)">
+        <label class="env-toggle-label">
+          <input type="radio" name="env" value="sandbox" id="env-sandbox" checked />
+          <span>Sandbox</span>
+        </label>
+        <label class="env-toggle-label">
+          <input type="radio" name="env" value="production" id="env-production" />
+          <span>Production</span>
+        </label>
+      </div>
+      <span id="env-badge" class="env-badge">…</span>
+    </div>
+  </div>
+</header>
+
+<div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
+
+<div class="app-body">
+
+<!-- ── Sidebar ────────────────────────────────────────────────────────────── -->
+<aside class="sidebar" id="sidebar">
+  <nav class="sidebar-nav">
+    <button type="button" class="sidebar-item active" data-panel="dashboard">
+      <span class="sidebar-icon" aria-hidden="true"><i data-lucide="layout-dashboard"></i></span>
+      <span class="sidebar-label">Dashboard</span>
+    </button>
+    <button type="button" class="sidebar-item" data-panel="invoice">
+      <span class="sidebar-icon" aria-hidden="true"><i data-lucide="file-plus"></i></span>
+      <span class="sidebar-label">New Invoice</span>
+    </button>
+    <button type="button" class="sidebar-item" data-panel="history">
+      <span class="sidebar-icon" aria-hidden="true"><i data-lucide="history"></i></span>
+      <span class="sidebar-label">Invoice History</span>
+    </button>
+    <button type="button" class="sidebar-item" data-panel="clients">
+      <span class="sidebar-icon" aria-hidden="true"><i data-lucide="users"></i></span>
+      <span class="sidebar-label">Clients</span>
+    </button>
+    <button type="button" class="sidebar-item" data-panel="settings">
+      <span class="sidebar-icon" aria-hidden="true"><i data-lucide="settings"></i></span>
+      <span class="sidebar-label">Company Settings</span>
+    </button>
+    <div class="sidebar-divider" role="separator"></div>
+    <button type="button" class="sidebar-item" data-panel="reference">
+      <span class="sidebar-icon" aria-hidden="true"><i data-lucide="database"></i></span>
+      <span class="sidebar-label">Reference Data</span>
+    </button>
+    <button type="button" class="sidebar-item" data-panel="lookup">
+      <span class="sidebar-icon" aria-hidden="true"><i data-lucide="search"></i></span>
+      <span class="sidebar-label">STATL / Reg Lookup</span>
+    </button>
+    <button type="button" class="sidebar-item" data-panel="errors">
+      <span class="sidebar-icon" aria-hidden="true"><i data-lucide="alert-circle"></i></span>
+      <span class="sidebar-label">Error Codes</span>
+    </button>
+    <button type="button" class="sidebar-item" data-panel="support">
+      <span class="sidebar-icon" aria-hidden="true"><i data-lucide="life-buoy"></i></span>
+      <span class="sidebar-label">Support</span>
+    </button>
+  </nav>
+  <div class="sidebar-footer">
+    <span id="sidebar-env-pill" class="sidebar-env-pill sandbox">Sandbox Mode</span>
+  </div>
+</aside>
+
+<!-- ── Content ────────────────────────────────────────────────────────────── -->
+<div class="content-area">
+
+<div id="mock-mode-banner" class="mock-mode-banner" role="alert" style="display:none">
+  <i data-lucide="alert-triangle"></i>
+  <div class="mock-mode-banner-text">
+    <strong>MOCK MODE ACTIVE</strong> — Invoices are not sent to FBR. Disable <code>FBR_MOCK_MODE</code> in <code>.env</code> before going live.
+    <span id="mock-mode-details" class="mock-mode-details"></span>
+  </div>
+</div>
+
+<div id="tab-dashboard" class="tab-panel active">
+  <header class="page-header">
+    <h1 class="page-title">Dashboard</h1>
+    <p class="page-subtitle">Overview of your invoicing activity</p>
+  </header>
+  <div id="dashboard-content"></div>
+</div>
+
+<div id="tab-invoice" class="tab-panel">
+  <header class="page-header">
+    <h1 class="page-title">New Invoice</h1>
+    <p class="page-subtitle">Create and submit a new FBR invoice</p>
+  </header>
+
+  <div id="no-company-alert" class="alert alert-warning" style="display:none">
+    <i data-lucide="alert-triangle"></i> <strong>Company settings not configured.</strong>
+    Open <strong>Company Settings</strong> and save Planetive seller details before submitting invoices.
+  </div>
+  <div id="no-token-alert" class="alert alert-warning" style="display:none">
+    <i data-lucide="alert-triangle"></i> <strong>Bearer token not configured.</strong>
+    Copy <code>.env.example</code> → <code>.env</code> and set <code>FBR_BEARER_TOKEN</code>, then restart the server.
+  </div>
+  <div id="sandbox-info" class="alert alert-info" style="display:none">
+    <i data-lucide="info"></i> Running in <strong>SANDBOX</strong> mode. Scenario ID is required. Results are not submitted to production FBR.
+  </div>
+
+  <form id="invoice-form" novalidate>
+    <div id="edit-mode-banner" class="alert alert-info" style="display:none">
+      <div class="edit-mode-banner-text">
+        <i data-lucide="lock"></i>
+        <span><strong>Item edit mode.</strong> Header and buyer fields are locked. Only editable line items can be changed. One edit per item.</span>
+      </div>
+      <div class="edit-mode-banner-actions">
+        <label class="edit-note-type-label" for="edit-note-type">Note type</label>
+        <select id="edit-note-type" class="edit-note-type-select">
+          <option value="debit">Debit Note</option>
+          <option value="credit">Credit Note</option>
+        </select>
+        <button type="button" class="btn btn-ghost btn-sm" id="exit-edit-mode-btn">Exit edit mode</button>
+      </div>
+    </div>
+    <div id="draft-badge" class="draft-badge" style="display:none">
+      Editing draft: <strong id="draft-internal-no">—</strong>
+    </div>
+
+    <!-- Invoice Header -->
+    <div class="card">
+      <div class="card-title"><span class="icon"><i data-lucide="file-text"></i></span> Invoice Header</div>
+      <div class="form-grid">
+
+        <div class="form-group">
+          <label>Invoice Type <span class="req">*</span></label>
+          <select id="invoiceType" name="invoiceType" required>
+            <option value="Sale Invoice">Sale Invoice</option>
+            <option value="Debit Note">Debit Note</option>
+            <option value="Credit Note">Credit Note</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Invoice Date <span class="req">*</span></label>
+          <input type="date" id="invoiceDate" name="invoiceDate" required />
+        </div>
+
+        <div class="form-group" id="scenarioPresetGroup" style="display:none">
+          <label>Scenario</label>
+          <div id="scenario-preset-badge" class="scenario-preset-badge">SN019 – Services</div>
+        </div>
+
+        <div class="form-group" id="scenarioGroup" style="display:none">
+          <label>Scenario ID <span class="req">*</span> <span class="opt">(sandbox only)</span></label>
+          <select id="scenarioId" name="scenarioId">
+            <option value="">— Select Scenario —</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="invoiceRefGroup" style="display:none">
+          <label>Reference Invoice No. <span class="req">*</span> <span class="opt">(debit/credit note)</span></label>
+          <input type="text" id="invoiceRefNo" name="invoiceRefNo" placeholder="22-digit (NTN) or 28-digit (CNIC)" />
+        </div>
+
+        <div class="form-group form-group-wide" id="noteReasonGroup" style="display:none">
+          <label>Note Reason <span class="req">*</span> <span class="opt">(debit/credit note)</span></label>
+          <input type="text" id="noteReason" name="noteReason" placeholder="Reason for adjustment" />
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Seller (from company settings) -->
+    <div class="card">
+      <div class="card-title"><span class="icon"><i data-lucide="building-2"></i></span> Seller Information <span class="opt">(from Company Settings)</span></div>
+      <div id="seller-info-card" class="seller-info-card">
+        <p class="seller-info-empty">Loading company settings…</p>
+      </div>
+    </div>
+
+    <!-- Buyer -->
+    <div class="card">
+      <div class="card-title"><span class="icon"><i data-lucide="users"></i></span> Buyer Information</div>
+      <div class="form-grid buyer-form-grid">
+
+        <div class="form-group form-group-wide">
+          <label>Select Client</label>
+          <select id="clientSelect">
+            <option value="">— Manual entry / select client —</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Buyer Registration Type <span class="req">*</span></label>
+          <select id="buyerRegistrationType" name="buyerRegistrationType" required>
+            <option value="Registered">Registered</option>
+            <option value="Unregistered">Unregistered</option>
+          </select>
+        </div>
+
+        <div class="form-group buyer-ntn-field">
+          <label>Buyer NTN / CNIC <span class="req">*</span> <span class="opt">(optional if Unregistered)</span></label>
+          <input type="text" id="buyerNTNCNIC" name="buyerNTNCNIC" placeholder="7-digit NTN or 13-digit CNIC" />
+        </div>
+
+        <div class="form-group">
+          <label>Buyer Business Name <span class="req">*</span></label>
+          <input type="text" id="buyerBusinessName" name="buyerBusinessName" required />
+        </div>
+
+        <div class="form-group">
+          <label>Buyer Province <span class="req">*</span></label>
+          <select id="buyerProvince" name="buyerProvince" required>
+            <option value="">— Loading… —</option>
+          </select>
+        </div>
+
+        <div class="form-group buyer-address-field">
+          <label>Buyer Address <span class="req">*</span></label>
+          <input type="text" id="buyerAddress" name="buyerAddress" required />
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Invoice Items -->
+    <div class="card">
+      <div class="items-header">
+        <div class="card-title" style="margin-bottom:0; border:none; padding:0"><span class="icon"><i data-lucide="package"></i></span> Invoice Items</div>
+        <button type="button" class="btn btn-outline btn-sm" id="add-item-btn"><i data-lucide="plus"></i> Add Item</button>
+      </div>
+      <div class="items-list-wrap">
+        <div id="items-body" class="items-list">
+          <!-- item cards inserted by JS -->
+        </div>
+      </div>
+
+      <div class="actions-row">
+        <button type="submit" class="btn btn-success" id="submit-btn">
+          <i data-lucide="check-circle"></i> Submit Invoice
+        </button>
+        <button type="button" class="btn btn-primary" id="validate-btn">
+          <i data-lucide="search"></i> Validate Only
+        </button>
+        <button type="button" class="btn btn-outline" id="save-draft-btn"><i data-lucide="save"></i> Save Draft</button>
+        <button type="button" class="btn btn-ghost" id="clear-btn"><i data-lucide="trash-2"></i> Clear Form</button>
+        <button type="button" class="btn btn-ghost" id="sample-btn"><i data-lucide="file-input"></i> Load Sample</button>
+      </div>
+    </div>
+
+  </form>
+
+  <!-- Response Panel -->
+  <div class="card" id="response-panel">
+    <div class="response-header">
+      <div class="card-title" style="margin-bottom:0; border:none; padding:0">
+        <span class="icon"><i data-lucide="inbox"></i></span> API Response
+      </div>
+      <span id="overall-badge" class="status-badge">—</span>
+    </div>
+
+    <div id="internal-invoice-box" class="invoice-number-box" style="display:none">
+      <div class="label">Internal Invoice No.</div>
+      <div class="value" id="internal-invoice-val">—</div>
+    </div>
+
+    <div id="invoice-number-box" class="invoice-number-box">
+      <div class="label">FBR Invoice Number</div>
+      <div class="value" id="invoice-number-val">—</div>
+    </div>
+
+    <div id="export-invoice-wrap" style="display:none; margin-bottom:14px"></div>
+
+    <div id="error-box" class="error-box">
+      <div class="error-code" id="err-code"></div>
+      <div class="error-msg"  id="err-msg"></div>
+    </div>
+
+    <div class="items-result" id="items-result" style="margin-bottom:14px"></div>
+
+    <details>
+      <summary style="cursor:pointer; font-size:12px; color:var(--gray-600); margin-bottom:6px">Raw JSON</summary>
+      <pre class="raw-json" id="raw-json"></pre>
+    </details>
+  </div>
+
+</div><!-- /tab-invoice -->
+
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     TAB – INVOICE HISTORY
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-history" class="tab-panel">
+  <header class="page-header">
+    <h1 class="page-title">Invoice History</h1>
+    <p class="page-subtitle">View and manage all submitted invoices</p>
+  </header>
+
+  <div class="card">
+    <div class="history-toolbar">
+      <div class="history-search-row">
+        <input type="search" id="history-search" placeholder="Search internal no., FBR no., client name…" />
+        <select id="history-status-filter">
+          <option value="">All statuses</option>
+          <option value="draft">Draft</option>
+          <option value="pending">Pending</option>
+          <option value="queued">Queued</option>
+          <option value="processing">Processing</option>
+          <option value="submitted">Submitted</option>
+          <option value="failed">Failed</option>
+          <option value="retrying">Retrying</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <button type="button" class="btn btn-primary btn-sm" id="history-search-btn">Search</button>
+        <a class="btn btn-outline btn-sm" id="history-export-btn" href="/api/invoices/export/excel"><i data-lucide="download"></i> Export Excel</a>
+      </div>
+      <div class="history-filter-row">
+        <label class="history-date-label">From <input type="date" id="history-date-from" /></label>
+        <label class="history-date-label">To <input type="date" id="history-date-to" /></label>
+        <select id="history-fbr-status-filter" title="FBR lifecycle status">
+          <option value="">All FBR statuses</option>
+          <option value="Valid">Valid</option>
+          <option value="Edited">Edited</option>
+          <option value="Cancelled">Cancelled</option>
+          <option value="Partially Edited">Partially Edited</option>
+          <option value="Partially Cancelled">Partially Cancelled</option>
+          <option value="Partially Edited &amp; Cancelled">Partially Edited &amp; Cancelled</option>
+        </select>
+        <button type="button" class="btn btn-ghost btn-sm" id="history-clear-filters">Clear filters</button>
+      </div>
+    </div>
+
+    <div class="history-table-wrap">
+      <table id="history-table">
+        <thead>
+          <tr>
+            <th>Internal No.</th>
+            <th>FBR IRN</th>
+            <th>Status</th>
+            <th>FBR Status</th>
+            <th>Client</th>
+            <th>Date</th>
+            <th>Total</th>
+            <th>Env</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="history-body">
+          <tr><td colspan="9" class="history-empty">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p id="history-count" class="history-count"></p>
+  </div>
+
+  <div class="card" id="history-detail" style="display:none">
+    <div class="card-title"><span class="icon"><i data-lucide="search"></i></span> Invoice Details</div>
+    <div id="history-detail-content"></div>
+    <div class="history-detail-actions" id="history-detail-actions"></div>
+  </div>
+
+</div><!-- /tab-history -->
+
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     TAB – CLIENTS
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-clients" class="tab-panel">
+  <header class="page-header">
+    <h1 class="page-title">Clients</h1>
+    <p class="page-subtitle">Manage your client directory</p>
+  </header>
+
+  <div class="card">
+    <div class="history-toolbar">
+      <div class="history-search-row">
+        <input type="search" id="clients-search" placeholder="Search clients by name or NTN…" />
+        <button type="button" class="btn btn-primary btn-sm" id="clients-search-btn">Search</button>
+        <button type="button" class="btn btn-success btn-sm" id="client-add-btn"><i data-lucide="user-plus"></i> Add Client</button>
+      </div>
+    </div>
+
+    <div class="history-table-wrap">
+      <table id="clients-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>NTN</th>
+            <th>Reg. Type</th>
+            <th>Province</th>
+            <th>Email</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="clients-body">
+          <tr><td colspan="6" class="history-empty">Open this tab to load clients.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" id="client-form-panel" style="display:none">
+    <div class="card-title"><span class="icon"><i data-lucide="user-plus"></i></span> <span id="client-form-title">Add Client</span></div>
+    <form id="client-form" class="form-grid">
+      <div class="form-group">
+        <label>Client Name <span class="req">*</span></label>
+        <input type="text" id="client-name" required />
+      </div>
+      <div class="form-group">
+        <label>NTN / CNIC</label>
+        <input type="text" id="client-ntn" />
+      </div>
+      <div class="form-group">
+        <label>Registration Type <span class="req">*</span></label>
+        <select id="client-registration-type">
+          <option value="Registered">Registered</option>
+          <option value="Unregistered">Unregistered</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Province <span class="req">*</span></label>
+        <select id="client-province" required>
+          <option value="">— Select Province —</option>
+        </select>
+      </div>
+      <div class="form-group form-group-wide">
+        <label>Address <span class="req">*</span></label>
+        <input type="text" id="client-address" required />
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="client-email" />
+      </div>
+      <div class="form-group">
+        <label>Phone</label>
+        <input type="text" id="client-phone" />
+      </div>
+      <div class="form-group form-group-wide actions-row">
+        <button type="submit" class="btn btn-primary" id="client-save-btn">Save Client</button>
+        <button type="button" class="btn btn-ghost" id="client-cancel-btn">Cancel</button>
+      </div>
+    </form>
+  </div>
+
+</div><!-- /tab-clients -->
+
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     TAB – COMPANY SETTINGS
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-settings" class="tab-panel">
+  <header class="page-header">
+    <h1 class="page-title">Company Settings</h1>
+    <p class="page-subtitle">Configure Planetive's seller details</p>
+  </header>
+
+  <div class="card">
+    <div class="card-title"><span class="icon"><i data-lucide="settings"></i></span> Planetive Company Settings</div>
+    <p class="settings-hint">Seller details on every invoice are loaded from this single company record.</p>
+    <form id="settings-form" class="form-grid">
+      <div class="form-group">
+        <label>Business Name <span class="req">*</span></label>
+        <input type="text" id="settings-business-name" required />
+      </div>
+      <div class="form-group">
+        <label>NTN <span class="req">*</span></label>
+        <input type="text" id="settings-ntn" required />
+      </div>
+      <div class="form-group">
+        <label>STRN</label>
+        <input type="text" id="settings-strn" />
+      </div>
+      <div class="form-group">
+        <label>Province <span class="req">*</span></label>
+        <select id="settings-province" required>
+          <option value="">— Select Province —</option>
+        </select>
+      </div>
+      <div class="form-group form-group-wide">
+        <label>Address <span class="req">*</span></label>
+        <input type="text" id="settings-address" required />
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="settings-email" />
+      </div>
+      <div class="form-group">
+        <label>Phone</label>
+        <input type="text" id="settings-phone" />
+      </div>
+      <div class="form-group form-group-wide">
+        <label>Logo URL</label>
+        <input type="url" id="settings-logo-url" placeholder="https://…" />
+      </div>
+      <div class="form-group form-group-wide actions-row">
+        <button type="submit" class="btn btn-primary" id="settings-save-btn">Save Settings</button>
+      </div>
+    </form>
+  </div>
+
+</div><!-- /tab-settings -->
+
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     TAB 2 – REFERENCE DATA
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-reference" class="tab-panel">
+  <header class="page-header">
+    <h1 class="page-title">Reference Data</h1>
+    <p class="page-subtitle">FBR reference datasets</p>
+  </header>
+
+  <div class="ref-grid">
+
+    <!-- Provinces -->
+    <div class="card ref-card">
+      <div class="card-title"><span class="icon"><i data-lucide="map"></i></span> Provinces</div>
+      <button class="btn btn-outline btn-sm" data-ref="provinces">Load</button>
+      <div class="ref-result" id="ref-provinces"></div>
+    </div>
+
+    <!-- Doc Types -->
+    <div class="card ref-card">
+      <div class="card-title"><span class="icon"><i data-lucide="folder"></i></span> Document Types</div>
+      <button class="btn btn-outline btn-sm" data-ref="doctypes">Load</button>
+      <div class="ref-result" id="ref-doctypes"></div>
+    </div>
+
+    <!-- Transaction Types -->
+    <div class="card ref-card">
+      <div class="card-title"><span class="icon"><i data-lucide="repeat"></i></span> Transaction Types</div>
+      <button class="btn btn-outline btn-sm" data-ref="trans-types">Load</button>
+      <div class="ref-result" id="ref-trans-types"></div>
+    </div>
+
+    <!-- UOM -->
+    <div class="card ref-card">
+      <div class="card-title"><span class="icon"><i data-lucide="ruler"></i></span> Units of Measurement</div>
+      <button class="btn btn-outline btn-sm" data-ref="uom">Load</button>
+      <div class="ref-result" id="ref-uom"></div>
+    </div>
+
+    <!-- SRO Item Codes -->
+    <div class="card ref-card">
+      <div class="card-title"><span class="icon"><i data-lucide="folder-open"></i></span> SRO Item Codes</div>
+      <button class="btn btn-outline btn-sm" data-ref="sro-item-codes">Load</button>
+      <div class="ref-result" id="ref-sro-item-codes"></div>
+    </div>
+
+    <!-- HS Codes -->
+    <div class="card ref-card">
+      <div class="card-title"><span class="icon"><i data-lucide="hash"></i></span> HS Codes / Item Codes</div>
+      <div class="alert alert-warning" style="font-size:12px;padding:8px 10px;margin-bottom:8px">
+        <i data-lucide="alert-triangle"></i> Large dataset — may be slow.
+      </div>
+      <button class="btn btn-outline btn-sm" data-ref="itemcodes">Load</button>
+      <div class="ref-result" id="ref-itemcodes"></div>
+    </div>
+
+    <!-- SRO Schedule (parameterised) -->
+    <div class="card ref-card">
+      <div class="card-title"><span class="icon"><i data-lucide="calendar"></i></span> SRO Schedule</div>
+      <div class="ref-params">
+        <div class="form-group"><label>Rate ID</label><input type="text" id="p-rate-id" placeholder="e.g. 413" /></div>
+        <div class="form-group"><label>Date</label><input type="date" id="p-sro-date" /></div>
+        <div class="form-group"><label>Province CSV</label><input type="text" id="p-prov-csv" placeholder="e.g. 1" /></div>
+      </div>
+      <button class="btn btn-outline btn-sm" data-ref="sro-schedule">Load</button>
+      <div class="ref-result" id="ref-sro-schedule"></div>
+    </div>
+
+    <!-- Sale Type to Rate -->
+    <div class="card ref-card">
+      <div class="card-title"><span class="icon"><i data-lucide="dollar-sign"></i></span> Sale Type → Rate</div>
+      <div class="ref-params">
+        <div class="form-group"><label>Date</label><input type="date" id="p-rate-date" /></div>
+        <div class="form-group"><label>Trans Type ID</label><input type="text" id="p-trans-id" placeholder="e.g. 18" /></div>
+        <div class="form-group"><label>Province ID</label><input type="text" id="p-orig-supp" placeholder="e.g. 1" /></div>
+      </div>
+      <button class="btn btn-outline btn-sm" data-ref="rates">Load</button>
+      <div class="ref-result" id="ref-rates"></div>
+    </div>
+
+    <!-- HS UOM -->
+    <div class="card ref-card">
+      <div class="card-title"><span class="icon"><i data-lucide="ruler"></i></span> HS Code → UOM</div>
+      <div class="ref-params">
+        <div class="form-group"><label>HS Code</label><input type="text" id="p-hs-code" placeholder="e.g. 5904.9000" /></div>
+        <div class="form-group"><label>Annexure ID</label><input type="text" id="p-annexure-id" placeholder="e.g. 3" /></div>
+      </div>
+      <button class="btn btn-outline btn-sm" data-ref="hs-uom">Load</button>
+      <div class="ref-result" id="ref-hs-uom"></div>
+    </div>
+
+    <!-- SRO Item Detail -->
+    <div class="card ref-card">
+      <div class="card-title"><span class="icon"><i data-lucide="archive"></i></span> SRO Item Detail</div>
+      <div class="ref-params">
+        <div class="form-group"><label>Date</label><input type="date" id="p-sro-item-date" /></div>
+        <div class="form-group"><label>SRO ID</label><input type="text" id="p-sro-id" placeholder="e.g. 389" /></div>
+      </div>
+      <button class="btn btn-outline btn-sm" data-ref="sro-item">Load</button>
+      <div class="ref-result" id="ref-sro-item"></div>
+    </div>
+
+  </div>
+</div><!-- /tab-reference -->
+
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     TAB 3 – STATL / REG LOOKUP
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-lookup" class="tab-panel">
+  <header class="page-header">
+    <h1 class="page-title">STATL / Reg Lookup</h1>
+    <p class="page-subtitle">Verify taxpayer registration status</p>
+  </header>
+
+  <div class="form-grid" style="gap:20px">
+
+    <!-- Taxpayer Status (STATL) -->
+    <div class="card" style="grid-column: span 1">
+      <div class="card-title"><span class="icon"><i data-lucide="search"></i></span> Taxpayer Status (STATL)</div>
+      <div class="lookup-row">
+        <div class="form-group">
+          <label>Registration No.</label>
+          <input type="text" id="statl-regno" placeholder="e.g. 0788762" />
+        </div>
+        <div class="form-group">
+          <label>Date</label>
+          <input type="date" id="statl-date" />
+        </div>
+        <button class="btn btn-primary btn-sm" id="statl-btn" style="margin-bottom:1px">Check</button>
+      </div>
+      <div class="lookup-result" id="statl-result"></div>
+    </div>
+
+    <!-- Registration Type Lookup -->
+    <div class="card" style="grid-column: span 1">
+      <div class="card-title"><span class="icon"><i data-lucide="id-card"></i></span> Registration Type Lookup</div>
+      <div class="lookup-row">
+        <div class="form-group">
+          <label>Registration No.</label>
+          <input type="text" id="regtype-regno" placeholder="e.g. 0788762" />
+        </div>
+        <button class="btn btn-primary btn-sm" id="regtype-btn" style="margin-bottom:1px">Look Up</button>
+      </div>
+      <div class="lookup-result" id="regtype-result"></div>
+    </div>
+
+  </div>
+</div><!-- /tab-lookup -->
+
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     TAB 4 – ERROR CODE REFERENCE
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-errors" class="tab-panel">
+  <header class="page-header">
+    <h1 class="page-title">Error Codes</h1>
+    <p class="page-subtitle">FBR error code reference</p>
+  </header>
+
+  <div class="error-lookup-grid">
+
+    <div class="card">
+      <div class="card-title"><span class="icon"><i data-lucide="alert-circle"></i></span> Sales Error Codes</div>
+      <div class="search-bar">
+        <input type="text" id="search-sales-errors" placeholder="Search code or description…" />
+      </div>
+      <div class="error-table-wrap">
+        <table id="sales-error-table">
+          <thead><tr><th>Code</th><th>Description</th></tr></thead>
+          <tbody id="sales-error-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="icon"><i data-lucide="alert-triangle"></i></span> Purchase Error Codes</div>
+      <div class="search-bar">
+        <input type="text" id="search-purchase-errors" placeholder="Search code or description…" />
+      </div>
+      <div class="error-table-wrap">
+        <table id="purchase-error-table">
+          <thead><tr><th>Code</th><th>Description</th></tr></thead>
+          <tbody id="purchase-error-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /tab-errors -->
+
+<div id="tab-support" class="tab-panel">
+  <header class="page-header">
+    <h1 class="page-title">Support</h1>
+    <p class="page-subtitle">FBR CRM guidance, troubleshooting checklists, and when to escalate</p>
+  </header>
+  <div id="support-content"></div>
+</div><!-- /tab-support -->
+
+</div><!-- /content-area -->
+</div><!-- /app-body -->
+
+<footer class="app-footer">
+  <p>© 2025 Planetive. All rights reserved.</p>
+</footer>
+
+</div><!-- /app-shell -->
+
+<script src="js/tax-utils.js"></script>
+<script src="js/app.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/history.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/clients.js"></script>
+<script src="js/support.js"></script>
+</body>
+</html>
