@@ -12,7 +12,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   ].filter(Boolean).join(', ');
   throw new Error(
     `Missing required environment variable(s): ${missing}. ` +
-    'Add them in Vercel → Project → Settings → Environment Variables, then redeploy.'
+    'Set them in your host dashboard (e.g. Railway → Variables, or Vercel → Environment Variables), then redeploy.'
   );
 }
 
