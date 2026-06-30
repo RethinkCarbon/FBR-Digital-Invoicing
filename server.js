@@ -209,6 +209,17 @@ app.post('/api/reg-type', async (req, res) => {
   catch (err) { handleError(res, err); }
 });
 
+// Temporary endpoint used to determine Railway outbound IP for FBR sandbox IP whitelisting.
+// Remove after sandbox registration is complete.
+app.get('/api/outbound-ip', async (req, res) => {
+  try {
+    const { data } = await axios.get('https://api.ipify.org?format=json', { timeout: 15000 });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: true, message: err.message });
+  }
+});
+
 // ── Health (no Supabase) ─────────────────────────────────────────────────────
 
 app.get('/api/health', (req, res) => {
