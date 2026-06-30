@@ -349,7 +349,7 @@ async function viewInvoiceDetail(id) {
       actionHtml += `<button type="button" class="btn btn-ghost btn-sm" data-edit-draft="${id}"><i data-lucide="pencil"></i> Edit in form</button>`;
     }
     if (inv.workflow_status === 'failed' || inv.workflow_status === 'cancelled') {
-      actionHtml += `<button type="button" class="btn btn-success btn-sm" data-retry="${id}"><i data-lucide="refresh-cw"></i> Retry submit</button>`;
+      actionHtml += `<button type="button" class="btn btn-success btn-sm" data-retry="${id}"><i data-lucide="refresh-cw"></i> Retry</button>`;
     }
     if (policy?.canEditItems) {
       actionHtml += `<button type="button" class="btn btn-primary btn-sm" data-edit-items="${id}"><i data-lucide="pencil-line"></i> Edit items</button>`;

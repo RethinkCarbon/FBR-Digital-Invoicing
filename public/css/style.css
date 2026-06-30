@@ -2025,6 +2025,133 @@ details summary {
   }
 }
 
+/* ── Dashboard sales ─────────────────────────────────────────────────────── */
+.dashboard-sales-section {
+  margin-bottom: var(--space-5);
+}
+
+.dashboard-sales-highlights {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.stat-card-sales {
+  border-left-color: var(--forest);
+}
+
+.stat-card-today {
+  border-left-color: #f59e0b;
+}
+
+.stat-card-month {
+  border-left-color: var(--mint);
+}
+
+.stat-value-money {
+  font-size: 1.75rem;
+  letter-spacing: -0.02em;
+}
+
+.stat-sublabel {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: var(--space-2);
+}
+
+.dashboard-sales-charts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
+}
+
+.sales-chart-card .sales-chart-desc {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin: 0 0 var(--space-4);
+}
+
+.sales-chart-empty {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin: var(--space-2) 0;
+}
+
+.sales-bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  min-height: 220px;
+  padding-top: var(--space-2);
+}
+
+.sales-bar-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.sales-bar-col-active .sales-bar-fill {
+  background: var(--forest);
+}
+
+.sales-bar-col-active .sales-bar-label {
+  color: var(--forest);
+  font-weight: 600;
+}
+
+.sales-bar-value {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.2;
+  min-height: 2.4em;
+  word-break: break-word;
+}
+
+.sales-bar-track {
+  width: 100%;
+  max-width: 48px;
+  height: 120px;
+  background: var(--surface-hover);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+
+.sales-bar-fill {
+  width: 100%;
+  background: var(--mint);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  min-height: 0;
+  transition: height 0.3s ease;
+}
+
+.sales-bar-label {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.2;
+}
+
+.sales-bar-count {
+  font-size: 0.625rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .dashboard-sales-highlights,
+  .dashboard-sales-charts {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ── Support page ─────────────────────────────────────────────────────────── */
 .support-status-banner {
   display: flex;

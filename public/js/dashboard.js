@@ -18,7 +18,86 @@ function dashboardStatusBadgeClass(status) {
 
 function dashboardFormatMoney(n) {
   const v = parseFloat(n);
-  return Number.isFinite(v) ? v.toFixed(2) : '—';
+  if (!Number.isFinite(v)) return '—';
+  return v.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function dashboardFormatCount(count, noun = 'invoice') {
+  const n = Number(count) || 0;
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
+function renderSalesHighlightCard(iconName, amount, label, sublabel, extraClass = '') {
+  return `
+    <div class="stat-card stat-card-sales ${extraClass}">
+      <div class="stat-icon"><i data-lucide="${iconName}"></i></div>
+      <div class="stat-value stat-value-money">${dashboardFormatMoney(amount)}</div>
+      <div class="stat-label">${label}</div>
+      ${sublabel ? `<div class="stat-sublabel">${sublabel}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderBarChart(bars, { valueKey = 'total', labelKey = 'label', emptyLabel = 'No sales' } = {}) {
+  if (!bars?.length || bars.every(b => !b[valueKey])) {
+    return `<p class="sales-chart-empty">${emptyLabel}</p>`;
+  }
+
+  return `
+    <div class="sales-bar-chart" role="img" aria-label="Sales bar chart">
+      ${bars.map(bar => `
+        <div class="sales-bar-col${bar.isToday || bar.isCurrent ? ' sales-bar-col-active' : ''}">
+          <div class="sales-bar-value" title="${dashboardFormatMoney(bar[valueKey])}">${dashboardFormatMoney(bar[valueKey])}</div>
+          <div class="sales-bar-track">
+            <div class="sales-bar-fill" style="height:${Math.max(bar.barPercent || 0, bar[valueKey] > 0 ? 4 : 0)}%"></div>
+          </div>
+          <div class="sales-bar-label">${bar[labelKey]}</div>
+          <div class="sales-bar-count">${dashboardFormatCount(bar.count)}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderSalesSection(sales) {
+  if (!sales) return '';
+
+  const today = sales.today || {};
+  const month = sales.month || {};
+
+  return `
+    <div class="dashboard-sales-section">
+      <div class="dashboard-sales-highlights">
+        ${renderSalesHighlightCard(
+          'sun',
+          today.total,
+          "Today's Sales",
+          `${dashboardFormatCount(today.count)} · ${today.label || 'Today'}`,
+          'stat-card-today'
+        )}
+        ${renderSalesHighlightCard(
+          'calendar',
+          month.total,
+          'Monthly Sales',
+          `${dashboardFormatCount(month.count)} · ${month.label || 'This month'}`,
+          'stat-card-month'
+        )}
+      </div>
+
+      <div class="dashboard-sales-charts">
+        <div class="card sales-chart-card">
+          <div class="card-title"><span class="icon"><i data-lucide="bar-chart-3"></i></span> Monthly Sales (last 6 months)</div>
+          <p class="sales-chart-desc">Submitted sale invoices by invoice date (UTC).</p>
+          ${renderBarChart(sales.monthlyChart, { labelKey: 'label', emptyLabel: 'No submitted sales in the last 6 months.' })}
+        </div>
+        <div class="card sales-chart-card">
+          <div class="card-title"><span class="icon"><i data-lucide="trending-up"></i></span> Daily Sales (last 7 days)</div>
+          <p class="sales-chart-desc">Submitted sale invoices by invoice date (UTC).</p>
+          ${renderBarChart(sales.dailyChart, { labelKey: 'label', emptyLabel: 'No submitted sales in the last 7 days.' })}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function dashboardFormatDate(d) {
@@ -110,6 +189,8 @@ function renderDashboard(stats, recent, limitInfo) {
     : `<tr><td colspan="5" class="history-empty">${dashboardEmptyMessage()}</td></tr>`;
 
   container.innerHTML = `
+    ${renderSalesSection(stats.sales)}
+
     <div class="dashboard-stats">
       ${renderStatCard('file-text', stats.total ?? 0, 'Total Invoices')}
       ${renderStatCard('check-circle', stats.submitted ?? 0, 'Submitted Successfully')}

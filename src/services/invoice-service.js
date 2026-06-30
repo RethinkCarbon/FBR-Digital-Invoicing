@@ -7,6 +7,7 @@ const {
   extractItemStatuses,
 } = require('../constants/fbr-status');
 const { allocateInternalInvoiceNumber } = require('./invoice-number');
+const { getSalesDashboard } = require('./sales-dashboard-service');
 
 const RETRY_DELAYS_SEC = [30, 120, 600, 3600, 3600];
 
@@ -359,7 +360,7 @@ async function markFailed(id, errorMessage, { scheduleRetry = false } = {}) {
 async function requeueInvoice(id) {
   const { data: existing, error: findErr } = await supabase
     .from('invoices')
-    .select('workflow_status, retry_count')
+    .select('workflow_status, retry_count, action')
     .eq('id', id)
     .single();
 
@@ -368,13 +369,17 @@ async function requeueInvoice(id) {
     throw new Error('Only failed or cancelled invoices can be retried');
   }
 
+  const retryAction =
+    existing.action === 'validate' || existing.action === 'submit'
+      ? existing.action
+      : 'submit';
   const now = new Date().toISOString();
   const { data, error } = await supabase
     .from('invoices')
     .update({
       workflow_status: WORKFLOW_STATUS.RETRYING,
       status:          workflowToLegacy(WORKFLOW_STATUS.RETRYING),
-      action:          'submit',
+      action:          retryAction,
       retry_count:     (existing.retry_count ?? 0) + 1,
       next_retry_at:   now,
       error_message:   null,
@@ -485,7 +490,7 @@ async function countInvoices({ environment, workflow_status } = {}) {
 async function getInvoiceStats({ environment } = {}) {
   const base = environment ? { environment } : {};
 
-  const [total, submitted, failed, pending, inQueue] = await Promise.all([
+  const [total, submitted, failed, pending, inQueue, sales] = await Promise.all([
     countInvoices(base),
     countInvoices({ ...base, workflow_status: WORKFLOW_STATUS.SUBMITTED }),
     countInvoices({ ...base, workflow_status: WORKFLOW_STATUS.FAILED }),
@@ -494,9 +499,10 @@ async function getInvoiceStats({ environment } = {}) {
       ...base,
       workflow_status: [WORKFLOW_STATUS.QUEUED, WORKFLOW_STATUS.PROCESSING, WORKFLOW_STATUS.RETRYING],
     }),
+    getSalesDashboard({ environment }),
   ]);
 
-  return { total, submitted, failed, pending, inQueue };
+  return { total, submitted, failed, pending, inQueue, sales };
 }
 
 async function getQueueStats({ environment } = {}) {
