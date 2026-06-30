@@ -1972,11 +1972,25 @@ details summary {
 
 /* ── Dashboard ──────────────────────────────────────────────────────────── */
 .dashboard-stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: var(--space-4);
   margin-bottom: var(--space-5);
   min-width: 0;
+}
+
+.dashboard-stats-row {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.dashboard-stats-sales {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.dashboard-stats-workflow {
+  grid-template-columns: repeat(5, 1fr);
 }
 
 .stat-card {
@@ -1986,6 +2000,7 @@ details summary {
   border-radius: var(--radius-lg);
   padding: var(--space-5);
   box-shadow: var(--shadow);
+  min-width: 0;
 }
 
 .stat-value,
@@ -2002,39 +2017,36 @@ details summary {
   margin-top: var(--space-1);
 }
 
-.dashboard-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
-}
-
 #dashboard-recent-table tbody tr.dashboard-invoice-row:hover {
   background: var(--surface-hover);
 }
 
-@media (max-width: 900px) {
-  .dashboard-stats {
+@media (max-width: 1100px) {
+  .dashboard-stats-workflow {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-stats-sales,
+  .dashboard-stats-workflow {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 
 @media (max-width: 520px) {
-  .dashboard-stats {
+  .dashboard-stats-sales,
+  .dashboard-stats-workflow {
     grid-template-columns: 1fr;
   }
 }
 
 /* ── Dashboard sales ─────────────────────────────────────────────────────── */
-.dashboard-sales-section {
-  margin-bottom: var(--space-5);
-}
-
-.dashboard-sales-highlights {
+.dashboard-sales-charts {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: var(--space-4);
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-5);
 }
 
 .stat-card-sales {
@@ -2050,20 +2062,17 @@ details summary {
 }
 
 .stat-value-money {
-  font-size: 1.75rem;
+  font-size: clamp(1.35rem, 2.5vw, 1.75rem);
   letter-spacing: -0.02em;
+  word-break: break-word;
 }
 
 .stat-sublabel {
   font-size: 0.75rem;
   color: var(--text-muted);
   margin-top: var(--space-2);
-}
-
-.dashboard-sales-charts {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-4);
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .sales-chart-card .sales-chart-desc {
@@ -2146,7 +2155,6 @@ details summary {
 }
 
 @media (max-width: 900px) {
-  .dashboard-sales-highlights,
   .dashboard-sales-charts {
     grid-template-columns: 1fr;
   }

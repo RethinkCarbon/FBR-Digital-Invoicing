@@ -59,15 +59,33 @@ function renderBarChart(bars, { valueKey = 'total', labelKey = 'label', emptyLab
   `;
 }
 
-function renderSalesSection(sales) {
+function renderSalesCharts(sales) {
   if (!sales) return '';
 
+  return `
+    <div class="dashboard-sales-charts">
+      <div class="card sales-chart-card">
+        <div class="card-title"><span class="icon"><i data-lucide="bar-chart-3"></i></span> Monthly Sales (last 6 months)</div>
+        <p class="sales-chart-desc">Submitted sale invoices by invoice date (UTC).</p>
+        ${renderBarChart(sales.monthlyChart, { labelKey: 'label', emptyLabel: 'No submitted sales in the last 6 months.' })}
+      </div>
+      <div class="card sales-chart-card">
+        <div class="card-title"><span class="icon"><i data-lucide="trending-up"></i></span> Daily Sales (last 7 days)</div>
+        <p class="sales-chart-desc">Submitted sale invoices by invoice date (UTC).</p>
+        ${renderBarChart(sales.dailyChart, { labelKey: 'label', emptyLabel: 'No submitted sales in the last 7 days.' })}
+      </div>
+    </div>
+  `;
+}
+
+function renderDashboardStatCards(stats) {
+  const sales = stats.sales || {};
   const today = sales.today || {};
   const month = sales.month || {};
 
   return `
-    <div class="dashboard-sales-section">
-      <div class="dashboard-sales-highlights">
+    <div class="dashboard-stats">
+      <div class="dashboard-stats-row dashboard-stats-sales">
         ${renderSalesHighlightCard(
           'sun',
           today.total,
@@ -83,18 +101,12 @@ function renderSalesSection(sales) {
           'stat-card-month'
         )}
       </div>
-
-      <div class="dashboard-sales-charts">
-        <div class="card sales-chart-card">
-          <div class="card-title"><span class="icon"><i data-lucide="bar-chart-3"></i></span> Monthly Sales (last 6 months)</div>
-          <p class="sales-chart-desc">Submitted sale invoices by invoice date (UTC).</p>
-          ${renderBarChart(sales.monthlyChart, { labelKey: 'label', emptyLabel: 'No submitted sales in the last 6 months.' })}
-        </div>
-        <div class="card sales-chart-card">
-          <div class="card-title"><span class="icon"><i data-lucide="trending-up"></i></span> Daily Sales (last 7 days)</div>
-          <p class="sales-chart-desc">Submitted sale invoices by invoice date (UTC).</p>
-          ${renderBarChart(sales.dailyChart, { labelKey: 'label', emptyLabel: 'No submitted sales in the last 7 days.' })}
-        </div>
+      <div class="dashboard-stats-row dashboard-stats-workflow">
+        ${renderStatCard('file-text', stats.total ?? 0, 'Total Invoices')}
+        ${renderStatCard('check-circle', stats.submitted ?? 0, 'Submitted Successfully')}
+        ${renderStatCard('x-circle', stats.failed ?? 0, 'Failed')}
+        ${renderStatCard('layers', stats.inQueue ?? 0, 'In Queue')}
+        ${renderStatCard('clock', stats.pending ?? 0, 'Pending / Draft')}
       </div>
     </div>
   `;
@@ -189,15 +201,8 @@ function renderDashboard(stats, recent, limitInfo) {
     : `<tr><td colspan="5" class="history-empty">${dashboardEmptyMessage()}</td></tr>`;
 
   container.innerHTML = `
-    ${renderSalesSection(stats.sales)}
-
-    <div class="dashboard-stats">
-      ${renderStatCard('file-text', stats.total ?? 0, 'Total Invoices')}
-      ${renderStatCard('check-circle', stats.submitted ?? 0, 'Submitted Successfully')}
-      ${renderStatCard('x-circle', stats.failed ?? 0, 'Failed')}
-      ${renderStatCard('layers', stats.inQueue ?? 0, 'In Queue')}
-      ${renderStatCard('clock', stats.pending ?? 0, 'Pending / Draft')}
-    </div>
+    ${renderDashboardStatCards(stats)}
+    ${renderSalesCharts(stats.sales)}
 
     ${renderCancellationLimitCard(limitInfo)}
 
@@ -218,17 +223,7 @@ function renderDashboard(stats, recent, limitInfo) {
         </table>
       </div>
     </div>
-
-    <div class="dashboard-actions">
-      <button type="button" class="btn btn-primary" id="dashboard-new-invoice"><i data-lucide="file-plus"></i> New Invoice</button>
-      <button type="button" class="btn btn-outline" id="dashboard-view-all"><i data-lucide="history"></i> View All Invoices</button>
-      <button type="button" class="btn btn-outline" id="dashboard-settings"><i data-lucide="settings"></i> Company Settings</button>
-    </div>
   `;
-
-  container.querySelector('#dashboard-new-invoice')?.addEventListener('click', () => switchToTab('invoice'));
-  container.querySelector('#dashboard-view-all')?.addEventListener('click', () => switchToTab('history'));
-  container.querySelector('#dashboard-settings')?.addEventListener('click', () => switchToTab('settings'));
 
   container.querySelectorAll('.dashboard-invoice-row').forEach(row => {
     row.style.cursor = 'pointer';

@@ -115,6 +115,10 @@ function setupEnvToggle() {
     radio.addEventListener('change', () => {
       activeEnv = radio.value;
       applyEnvUI();
+      if (document.getElementById('tab-dashboard')?.classList.contains('active') &&
+          typeof loadDashboard === 'function') {
+        loadDashboard();
+      }
     });
   });
 }
