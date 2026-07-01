@@ -18,6 +18,7 @@ const { createInvoiceRouter } = require('./src/routes/invoices');
 const { startInvoiceSubmissionWorker } = require('./src/workers/invoice-submission-worker');
 const settingsRouter = require('./src/routes/settings');
 const clientsRouter  = require('./src/routes/clients');
+const { createFbrDiagnosticsRouter } = require('./src/routes/fbr-diagnostics');
 const { isPlanetiveMode, APP_MODE } = require('./src/constants/app-mode');
 const { getDefaultScenarioId, getScenarioPreset } = require('./src/constants/scenario-presets');
 const { normalizeProvinceForFbr } = require('./src/constants/provinces');
@@ -75,6 +76,7 @@ const invoiceRouter = createInvoiceRouter({ fbrHandlers });
 app.use('/api/invoices', invoiceRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/clients', clientsRouter);
+app.use('/api/fbr', createFbrDiagnosticsRouter({ fbrGet, fbrPost }));
 
 // Legacy aliases (same handlers)
 app.post('/api/invoice/post',     (req, res) => { req.url = '/post';     invoiceRouter(req, res); });
