@@ -262,6 +262,9 @@ function logStartupBanner() {
       console.log(`FBR mock    : SCENARIO=${mock.scenario}`);
     }
   }
+  if (String(process.env.FBR_DEBUG_VALIDATE || '').toLowerCase() === 'true') {
+    console.log('FBR debug   : validate request/response logging ON (revert after sandbox testing)');
+  }
 }
 
 async function bootstrap() {

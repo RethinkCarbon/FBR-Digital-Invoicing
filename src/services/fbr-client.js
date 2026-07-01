@@ -4,6 +4,14 @@ const axios = require('axios');
 const { FBR_URLS } = require('../constants');
 const { FBR_STATUS, isFbrResponseValid } = require('../constants/fbr-status');
 const { getMockConfig, normalizeMockScenario } = require('../constants/mock-config');
+const {
+  isFbrValidateDebugEnabled,
+  logFbrValidateStart,
+  logFbrValidateSuccess,
+  logFbrValidateFailure,
+  formatAxiosErrorDetailed,
+  summarizeBody,
+} = require('../debug/fbr-validate-debug');
 
 const TOKEN = (process.env.FBR_BEARER_TOKEN || '').trim();
 
@@ -13,9 +21,41 @@ function authHeader() {
 
 function getValidationErrorMessage(data) {
   const vr = data?.validationResponse || data;
-  if (vr?.error) return typeof vr.error === 'string' ? vr.error : JSON.stringify(vr.error);
-  if (vr?.errorCode) return `Error Code: ${vr.errorCode}`;
-  return 'Invoice validation failed';
+
+  if (vr?.error) {
+    const text = typeof vr.error === 'string' ? vr.error.trim() : JSON.stringify(vr.error);
+    if (text) {
+      return vr.errorCode ? `[${vr.errorCode}] ${text}` : text;
+    }
+  }
+
+  if (vr?.errorCode) {
+    return `FBR error code: ${vr.errorCode}`;
+  }
+
+  const items = vr?.invoiceStatuses;
+  if (Array.isArray(items)) {
+    const itemErrors = items
+      .map((s, i) => {
+        const code = s.errorCode || s.statusCode;
+        const msg  = s.error;
+        if (!code && !msg) return null;
+        return `Item ${s.itemSNo || i + 1}: ${[code, msg].filter(Boolean).join(' — ')}`;
+      })
+      .filter(Boolean);
+    if (itemErrors.length) return itemErrors.join('; ');
+  }
+
+  if (data === null || data === undefined) {
+    return 'FBR returned empty response body';
+  }
+
+  const summary = summarizeBody(data);
+  if (summary === '(empty response body)' || summary === '(empty JSON object {})') {
+    return summary;
+  }
+
+  return `FBR validation rejected. Full response: ${summary}`;
 }
 
 function formatMockFbrDated(date = new Date()) {
@@ -139,19 +179,39 @@ function isTransientError(err) {
 }
 
 function formatAxiosError(err) {
-  if (err.response?.data) {
+  if (isFbrValidateDebugEnabled()) {
+    return formatAxiosErrorDetailed(err);
+  }
+  if (err.response?.data !== undefined && err.response?.data !== null) {
     const d = err.response.data;
-    return typeof d === 'string' ? d : JSON.stringify(d);
+    const body = typeof d === 'string' ? d : JSON.stringify(d);
+    if (body && body !== '{}') {
+      const status = err.response.status ? `HTTP ${err.response.status}: ` : '';
+      return `${status}${body}`;
+    }
+  }
+  if (err.response) {
+    const status = err.response.status;
+    const empty = summarizeBody(err.response.data);
+    return `HTTP ${status} — ${empty}`;
   }
   return err.message || 'Unknown FBR error';
 }
 
-async function fbrPost(url, body) {
-  const res = await axios.post(url, body, {
-    headers: { ...authHeader(), 'Content-Type': 'application/json' },
-    timeout: 15000,
-  });
-  return res.data;
+async function fbrPost(url, body, { debug = false } = {}) {
+  if (debug) logFbrValidateStart(url, body);
+
+  try {
+    const res = await axios.post(url, body, {
+      headers: { ...authHeader(), 'Content-Type': 'application/json' },
+      timeout: 15000,
+    });
+    if (debug) logFbrValidateSuccess(res);
+    return res.data;
+  } catch (err) {
+    if (debug) logFbrValidateFailure(err);
+    throw err;
+  }
 }
 
 async function callFbr(environment, payload, mode, options = {}) {
@@ -179,7 +239,8 @@ async function callFbr(environment, payload, mode, options = {}) {
     throw new Error('FBR_BEARER_TOKEN is not configured');
   }
 
-  return fbrPost(url, payload);
+  const debugValidate = mode === 'validate' && isFbrValidateDebugEnabled();
+  return fbrPost(url, payload, { debug: debugValidate });
 }
 
 module.exports = {

@@ -9,6 +9,10 @@ const {
 } = require('./fbr-client');
 const { isFbrSubmissionAccepted } = require('../constants/fbr-status');
 const {
+  isFbrValidateDebugEnabled,
+  logFbrValidateRejected,
+} = require('../debug/fbr-validate-debug');
+const {
   claimNextJob,
   finalizeFbrResult,
   markFailed,
@@ -27,6 +31,13 @@ async function processInvoiceJob(invoice) {
       retryCount: invoice.retry_count ?? 0,
     });
     const accepted   = isFbrSubmissionAccepted(fbrData);
+    const errorMessage = accepted ? null : getValidationErrorMessage(fbrData);
+
+    if (mode === 'validate' && isFbrValidateDebugEnabled()) {
+      console.log(`[fbr-debug][validate] invoice ${invoice.id} environment=${invoice.environment}`);
+      if (!accepted) logFbrValidateRejected(fbrData, errorMessage);
+    }
+
     const qrCode     = (accepted && mode === 'submit' && fbrData.invoiceNumber)
       ? await generateInvoiceQR(fbrData.invoiceNumber)
       : null;
@@ -36,10 +47,13 @@ async function processInvoiceJob(invoice) {
       action: mode === 'submit' ? 'submit' : 'validate',
       fbrData,
       qrCode,
-      errorMessage: accepted ? null : getValidationErrorMessage(fbrData),
+      errorMessage: accepted ? null : errorMessage,
     });
   } catch (err) {
     const message = formatAxiosError(err);
+    if (mode === 'validate' && isFbrValidateDebugEnabled()) {
+      console.error(`[fbr-debug][validate] invoice ${invoice.id} axios failure:`, message);
+    }
     if (isTransientError(err)) {
       return markFailed(invoice.id, message, { scheduleRetry: true });
     }

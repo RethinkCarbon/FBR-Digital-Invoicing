@@ -927,8 +927,11 @@ async function submitInvoice(action) {
     if (queued.queued) {
       activeBtn.innerHTML = `<span class="spinner"></span> Processing…`;
       const result = await pollInvoiceUntilDone(queued.id, action);
-      if (result.workflowStatus === 'failed' && result.error_message) {
-        displayError(new Error(result.error_message));
+      if (result.workflowStatus === 'failed') {
+        displayError(
+          new Error(result.error_message || 'Invoice validation failed with no error_message'),
+          result
+        );
       } else {
         displayResponse(result, action);
       }
@@ -1055,7 +1058,7 @@ function displayResponse(data, action) {
   refreshLucideIcons(panel);
 }
 
-function displayError(err) {
+function displayError(err, fbrResult) {
   const panel = document.getElementById('response-panel');
   panel.style.display = 'block';
   panel.scrollIntoView({ behavior: 'smooth' });
@@ -1070,7 +1073,16 @@ function displayError(err) {
   document.getElementById('err-code').textContent = 'Request Error';
   document.getElementById('err-msg').textContent  = err.message || String(err);
   document.getElementById('items-result').style.display = 'none';
-  document.getElementById('raw-json').textContent = JSON.stringify(err, null, 2);
+
+  const raw = {
+    message:       err.message || String(err),
+    workflowStatus: fbrResult?.workflowStatus ?? null,
+    error_message:  fbrResult?.error_message ?? null,
+    fbrResponse:    fbrResult?.validationResponse
+      ? fbrResult
+      : (fbrResult || null),
+  };
+  document.getElementById('raw-json').textContent = JSON.stringify(raw, null, 2);
 }
 
 // ── Clear / Sample ────────────────────────────────────────────────────────────
