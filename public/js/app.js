@@ -592,26 +592,31 @@ function buildPayload() {
 
   rows.forEach(tr => {
     const idx = tr.id.replace('item-row-', '');
+    const textField = name => {
+      const el = tr.querySelector(`[name="${name}_${idx}"]`);
+      return String(el?.value ?? '').trim();
+    };
     const g   = name => tr.querySelector(`[name="${name}_${idx}"]`)?.value ?? '0';
     const n   = name => parseFloat(g(name)) || 0;
+    const rate = textField('rate');
 
     payload.items.push({
-      hsCode:                          g('hsCode'),
-      productDescription:              g('productDescription'),
-      saleType:                        g('saleType') || defaultSaleType(),
-      rate:                            g('rate'),
-      uoM:                             g('uoM'),
+      hsCode:                          textField('hsCode'),
+      productDescription:              textField('productDescription'),
+      saleType:                        textField('saleType') || defaultSaleType(),
+      rate,
+      uoM:                             textField('uoM'),
       quantity:                        n('quantity'),
       totalValues:                     n('totalValues') || calculateLineTotal(
         n('valueSalesExcludingST'),
-        g('rate'),
+        rate,
         n('furtherTax'),
         n('fedPayable'),
         n('discount')
       ),
       valueSalesExcludingST:           n('valueSalesExcludingST'),
       fixedNotifiedValueOrRetailPrice: n('fixedNotifiedValueOrRetailPrice'),
-      salesTaxApplicable:              calculateSalesTax(n('valueSalesExcludingST'), g('rate')),
+      salesTaxApplicable:              calculateSalesTax(n('valueSalesExcludingST'), rate),
       salesTaxWithheldAtSource:        n('salesTaxWithheldAtSource'),
       extraTax:                        n('extraTax'),
       furtherTax:                      n('furtherTax'),

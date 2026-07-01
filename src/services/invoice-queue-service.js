@@ -10,6 +10,7 @@ const {
 const { isFbrSubmissionAccepted } = require('../constants/fbr-status');
 const {
   isFbrValidateDebugEnabled,
+  isFbrPayloadDebugEnabled,
   logFbrValidateRejected,
 } = require('../debug/fbr-validate-debug');
 const {
@@ -18,6 +19,12 @@ const {
   markFailed,
 } = require('./invoice-service');
 
+function logFbrPayload(mode, invoiceId, payload) {
+  if (!isFbrPayloadDebugEnabled()) return;
+  console.log(`[fbr-debug][${mode}] invoice ${invoiceId ?? '(new)'} final payload:`);
+  console.log(JSON.stringify(payload, null, 2));
+}
+
 async function processInvoiceJob(invoice) {
   const mode = invoice.action === 'validate' ? 'validate' : 'submit';
   const payload = invoice.request_payload;
@@ -25,6 +32,8 @@ async function processInvoiceJob(invoice) {
   if (!payload) {
     return markFailed(invoice.id, 'Missing request payload');
   }
+
+  logFbrPayload(mode, invoice.id, payload);
 
   try {
     const fbrData  = await callFbr(invoice.environment, payload, mode, {

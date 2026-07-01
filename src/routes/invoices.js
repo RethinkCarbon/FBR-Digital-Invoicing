@@ -154,7 +154,21 @@ function createInvoiceRouter({ fbrHandlers }) {
     try {
       const environment = resolveEnv(req);
       const { invoiceId, clientId, payload } = stripMeta(req.body);
-      const { payload: enriched, noteMeta } = await enrichPayload(req, payload, clientId);
+
+      let rawPayload = payload;
+      if (invoiceId) {
+        const existing = await getInvoiceById(invoiceId);
+        if (
+          existing.workflow_status === WORKFLOW_STATUS.PENDING &&
+          existing.request_payload &&
+          Array.isArray(existing.request_payload.items)
+        ) {
+          // Submit the validated payload — not a fresh DOM read that may have lost rate/UOM.
+          rawPayload = existing.request_payload;
+        }
+      }
+
+      const { payload: enriched, noteMeta } = await enrichPayload(req, rawPayload, clientId);
       const noteFields = noteFieldsFromMeta(noteMeta);
 
       const row = await enqueueForSubmission({

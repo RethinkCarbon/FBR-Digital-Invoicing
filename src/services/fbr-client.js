@@ -6,6 +6,7 @@ const { FBR_STATUS, isFbrResponseValid } = require('../constants/fbr-status');
 const { getMockConfig, normalizeMockScenario } = require('../constants/mock-config');
 const {
   isFbrValidateDebugEnabled,
+  isFbrPayloadDebugEnabled,
   logFbrValidateStart,
   logFbrValidateSuccess,
   logFbrValidateFailure,
@@ -239,8 +240,9 @@ async function callFbr(environment, payload, mode, options = {}) {
     throw new Error('FBR_BEARER_TOKEN is not configured');
   }
 
+  const debugFbrPayload = isFbrPayloadDebugEnabled();
   const debugValidate = mode === 'validate' && isFbrValidateDebugEnabled();
-  return fbrPost(url, payload, { debug: debugValidate });
+  return fbrPost(url, payload, { debug: debugValidate || debugFbrPayload });
 }
 
 module.exports = {

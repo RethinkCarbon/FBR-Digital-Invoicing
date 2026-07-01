@@ -33,20 +33,50 @@ async function fetchHsUomForScenario(scenarioId, hsCode) {
 }
 
 function buildRateSelectOptions(rates, selected) {
-  const opts = (rates || []).map(r => {
+  const list = rates || [];
+  if (!list.length) return '<option value="">— Select rate —</option>';
+
+  const hasSelected = selected && list.some(r => r.rateDesc === selected);
+  const opts = list.map(r => {
     const val = r.rateDesc;
     const sel = val === selected ? ' selected' : '';
     return `<option value="${val}"${sel}>${val}</option>`;
   });
-  return '<option value="">— Select rate —</option>' + opts.join('');
+
+  if (!hasSelected) {
+    return opts.join('');
+  }
+  return opts.join('');
+}
+
+function resolveRateFromReference(rates, preferred) {
+  const list = rates || [];
+  if (!list.length) return preferred || '';
+  if (preferred && list.some(r => r.rateDesc === preferred)) return preferred;
+  return list[0].rateDesc;
 }
 
 function buildUomSelectOptions(uomList, selected) {
-  const opts = (uomList || []).map(u => {
+  const list = uomList || [];
+  if (!list.length) return '<option value="">— Select UOM —</option>';
+
+  const hasSelected = selected && list.some(u => u.description === selected);
+  const opts = list.map(u => {
     const sel = u.description === selected ? ' selected' : '';
     return `<option value="${u.description}"${sel}>${u.description}</option>`;
   });
-  return '<option value="">— Select UOM —</option>' + opts.join('');
+
+  if (!hasSelected) {
+    return opts.join('');
+  }
+  return opts.join('');
+}
+
+function resolveUomFromReference(uomList, preferred) {
+  const list = uomList || [];
+  if (!list.length) return preferred || '';
+  if (preferred && list.some(u => u.description === preferred)) return preferred;
+  return list[0].description;
 }
 
 function buildHsDatalistId(scenarioId) {
@@ -84,23 +114,22 @@ function applyReferenceToItemRow(row, ref, presetDefaults = {}) {
   const rateEl = row.querySelector(`[name="rate_${idx}"]`);
   if (rateEl && ref.rates?.length) {
     const parent = rateEl.parentElement;
-    const selected = presetDefaults.rate || rateEl.value;
+    const chosen = resolveRateFromReference(ref.rates, presetDefaults.rate || rateEl.value);
     const select = document.createElement('select');
     select.name = `rate_${idx}`;
-    select.innerHTML = buildRateSelectOptions(ref.rates, selected);
-    if (selected) select.value = selected;
-    else if (ref.rates[0]) select.value = ref.rates[0].rateDesc;
+    select.innerHTML = buildRateSelectOptions(ref.rates, chosen);
+    select.value = chosen;
     parent.replaceChild(select, rateEl);
   }
 
   const uomEl = row.querySelector(`[name="uoM_${idx}"]`);
   if (uomEl && ref.uomList?.length) {
     const parent = uomEl.parentElement;
-    const selected = presetDefaults.uoM || uomEl.value;
+    const chosen = resolveUomFromReference(ref.uomList, presetDefaults.uoM || uomEl.value);
     const select = document.createElement('select');
     select.name = `uoM_${idx}`;
-    select.innerHTML = buildUomSelectOptions(ref.uomList, selected);
-    if (selected) select.value = selected;
+    select.innerHTML = buildUomSelectOptions(ref.uomList, chosen);
+    select.value = chosen;
     parent.replaceChild(select, uomEl);
   }
 
@@ -127,7 +156,9 @@ async function bindHsUomLookup(row, scenarioId) {
       const result = await fetchHsUomForScenario(scenarioId, hs);
       if (!result.uom?.length) return;
       if (uomEl.tagName === 'SELECT') {
-        uomEl.innerHTML = buildUomSelectOptions(result.uom, uomEl.value);
+        const chosen = resolveUomFromReference(result.uom, uomEl.value);
+        uomEl.innerHTML = buildUomSelectOptions(result.uom, chosen);
+        uomEl.value = chosen;
       }
     } catch (err) {
       console.warn('HS UOM lookup:', err.message);

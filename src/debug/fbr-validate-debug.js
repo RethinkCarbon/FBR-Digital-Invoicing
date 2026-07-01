@@ -9,6 +9,10 @@ function isFbrValidateDebugEnabled() {
   return String(process.env.FBR_DEBUG_VALIDATE || '').toLowerCase() === 'true';
 }
 
+function isFbrPayloadDebugEnabled() {
+  return String(process.env.FBR_DEBUG_FBR_PAYLOAD || process.env.FBR_DEBUG_VALIDATE || '').toLowerCase() === 'true';
+}
+
 function redactHeaders(headers = {}) {
   const copy = { ...headers };
   if (copy.Authorization) copy.Authorization = 'Bearer ***';
@@ -34,9 +38,9 @@ function summarizeBody(data) {
 }
 
 function logFbrValidateStart(url, payload) {
-  console.log('[fbr-debug][validate] ── request ──────────────────────────────');
-  console.log('[fbr-debug][validate] URL:', url);
-  console.log('[fbr-debug][validate] payload:', JSON.stringify(payload, null, 2));
+  console.log('[fbr-debug][fbr] ── request ──────────────────────────────');
+  console.log('[fbr-debug][fbr] URL:', url);
+  console.log('[fbr-debug][fbr] payload:', JSON.stringify(payload, null, 2));
 }
 
 function logFbrValidateSuccess(res) {
@@ -92,6 +96,7 @@ function formatAxiosErrorDetailed(err) {
 
 module.exports = {
   isFbrValidateDebugEnabled,
+  isFbrPayloadDebugEnabled,
   logFbrValidateStart,
   logFbrValidateSuccess,
   logFbrValidateFailure,

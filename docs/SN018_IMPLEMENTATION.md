@@ -100,9 +100,20 @@ Client: `public/js/tax-utils.js`
 1. User selects **SN018** in the scenario dropdown (sandbox).
 2. Reference data loads automatically (trans type, rates, HS datalist, UOM).
 3. User fills invoice and clicks **Validate** → `POST /api/invoices/validate` → FBR `validateinvoicedata_sb`.
-4. On success, workflow status becomes `pending`.
+4. On success, workflow status becomes `pending` and `request_payload` (with rate) is stored in Supabase.
 5. **Submit** is blocked for SN018 until validation succeeded (`workflow_status === 'pending'`).
-6. SN019 submit behaviour is unchanged (no validate-first guard).
+6. On submit, when status is `pending`, the server reuses the **validated** `request_payload` from the database (not a fresh DOM read) so `rate` cannot be lost.
+7. SN019 submit behaviour is unchanged for direct submit; validate-then-submit also benefits from pending payload reuse.
+
+### Known bug fixed (FBR 0020 on submit)
+
+**Symptom:** Validate succeeds; Submit fails with `0020 — Rate field cannot be empty or null`.
+
+**Cause:** `applyReferenceToItemRow()` replaced the rate text input with a `<select>` whose first option was empty. If the current rate (e.g. SN019 default `18.5%`) was not in SN018’s API rate list, the browser left `select.value` as `""`. Validate had already stored the correct rate in DB; Submit re-read the form and sent `rate: ""`.
+
+**Divergence point:** `public/js/scenario-reference.js` (`applyReferenceToItemRow`) + `public/js/app.js` (`buildPayload` line reading `rate`).
+
+**Fix:** (1) Resolve rate/UOM only from API lists when building selects. (2) On `POST /api/invoices/post`, reuse `request_payload` when `workflow_status === 'pending'`.
 
 ## UI behaviour
 

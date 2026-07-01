@@ -64,6 +64,9 @@ async function buildFbrPayload(rawPayload, { environment, clientId, skipNoteVali
       if (!String(item.hsCode || '').trim()) {
         throw new Error(`hsCode is required on line item ${index + 1}`);
       }
+      if (!String(item.rate || '').trim()) {
+        throw new Error(`rate is required on line item ${index + 1}`);
+      }
     });
   }
 
