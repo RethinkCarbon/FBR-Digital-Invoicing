@@ -19,8 +19,9 @@ const { startInvoiceSubmissionWorker } = require('./src/workers/invoice-submissi
 const settingsRouter = require('./src/routes/settings');
 const clientsRouter  = require('./src/routes/clients');
 const { createFbrDiagnosticsRouter } = require('./src/routes/fbr-diagnostics');
+const { createScenariosRouter } = require('./src/routes/scenarios');
 const { isPlanetiveMode, APP_MODE } = require('./src/constants/app-mode');
-const { getDefaultScenarioId, getScenarioPreset } = require('./src/constants/scenario-presets');
+const { getDefaultScenarioId, getScenarioPreset, getPlanetiveScenarioPresets, PLANETIVE_SCENARIO_IDS } = require('./src/constants/scenario-presets');
 const { normalizeProvinceForFbr } = require('./src/constants/provinces');
 const {
   getCompanySettings,
@@ -77,6 +78,7 @@ app.use('/api/invoices', invoiceRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/clients', clientsRouter);
 app.use('/api/fbr', createFbrDiagnosticsRouter({ fbrGet, fbrPost }));
+app.use('/api/scenarios', createScenariosRouter({ fbrGet }));
 
 // Legacy aliases (same handlers)
 app.post('/api/invoice/post',     (req, res) => { req.url = '/post';     invoiceRouter(req, res); });
@@ -107,7 +109,16 @@ app.get('/api/config', async (req, res) => {
     let scenarios = SCENARIOS;
 
     if (planetive) {
-      scenarios = SCENARIOS.filter(s => s.id === defaultScenarioId);
+      scenarios = PLANETIVE_SCENARIO_IDS
+        .map(id => SCENARIOS.find(s => s.id === id))
+        .filter(Boolean);
+    }
+
+    const scenarioPresets = {};
+    if (planetive) {
+      PLANETIVE_SCENARIO_IDS.forEach(id => {
+        scenarioPresets[id] = getScenarioPreset(id);
+      });
     }
 
     let companySettings = null;
@@ -133,6 +144,7 @@ app.get('/api/config', async (req, res) => {
       mockScenarios:        MOCK_SCENARIOS,
       defaultScenarioId,
       scenarioPreset:       getScenarioPreset(defaultScenarioId),
+      scenarioPresets,
       scenarios,
       saleTypes:            SALE_TYPES,
       salesErrorCodes:      SALES_ERROR_CODES,
@@ -246,7 +258,7 @@ app.get('/api/health', (req, res) => {
 
 function logStartupBanner() {
   console.log(`Environment : ${DEFAULT_ENV.toUpperCase()} (default, switchable from UI)`);
-  console.log(`App mode    : ${APP_MODE}${isPlanetiveMode() ? ' (SN019 services workflow)' : ''}`);
+  console.log(`App mode    : ${APP_MODE}${isPlanetiveMode() ? ' (SN019/SN018 services workflow)' : ''}`);
   console.log(`Token set   : ${TOKEN.length > 0 ? 'YES' : 'NO — set FBR_BEARER_TOKEN in .env'}`);
   if (getMockConfig().enabled) {
     const mock = getMockConfig();

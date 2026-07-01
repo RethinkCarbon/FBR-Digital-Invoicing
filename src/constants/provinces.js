@@ -72,9 +72,16 @@ function listFbrProvinces() {
   }));
 }
 
+function getProvinceCode(province) {
+  const official = normalizeProvinceForFbr(province);
+  const row = FBR_PROVINCES.find(p => p.official === official);
+  return row?.code ?? null;
+}
+
 module.exports = {
   FBR_PROVINCES,
   normalizeProvinceForFbr,
   provinceDisplayLabel,
   listFbrProvinces,
+  getProvinceCode,
 };

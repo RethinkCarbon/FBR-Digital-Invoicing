@@ -2,17 +2,27 @@
 
 /**
  * Scenario presets — fields confirmed by FBR DI API v1.12 scenario table (§9)
- * and FBR reference / sandbox validation for Planetive SN019 (Services).
+ * and FBR reference / sandbox validation.
  */
 const SCENARIO_PRESETS = {
   SN019: {
     scenarioId: 'SN019',
+    description: 'Services rendered or provided',
     itemDefaults: {
       saleType: 'Services',
       hsCode:   '9805.9200',
       rate:     '18.5%',
       uoM:      'Numbers, pieces, units',
     },
+    fedInStMode: false,
+  },
+  SN018: {
+    scenarioId: 'SN018',
+    description: 'Services Rendered or Provided Where FED is Charged in ST Mode',
+    itemDefaults: {
+      saleType: 'Services (FED in ST Mode)',
+    },
+    fedInStMode: true,
   },
   SN001: {
     scenarioId: 'SN001',
@@ -24,7 +34,13 @@ const SCENARIO_PRESETS = {
   },
 };
 
+const PLANETIVE_SCENARIO_IDS = Object.freeze(['SN019', 'SN018']);
+
 const PLANETIVE_DEFAULT_SCENARIO = 'SN019';
+
+function isPlanetiveScenario(scenarioId) {
+  return PLANETIVE_SCENARIO_IDS.includes(scenarioId);
+}
 
 function getScenarioPreset(scenarioId) {
   return SCENARIO_PRESETS[scenarioId] ?? null;
@@ -34,9 +50,18 @@ function getDefaultScenarioId() {
   return PLANETIVE_DEFAULT_SCENARIO;
 }
 
+function getPlanetiveScenarioPresets() {
+  return PLANETIVE_SCENARIO_IDS
+    .map(id => SCENARIO_PRESETS[id])
+    .filter(Boolean);
+}
+
 module.exports = {
   SCENARIO_PRESETS,
+  PLANETIVE_SCENARIO_IDS,
   PLANETIVE_DEFAULT_SCENARIO,
   getScenarioPreset,
   getDefaultScenarioId,
+  isPlanetiveScenario,
+  getPlanetiveScenarioPresets,
 };

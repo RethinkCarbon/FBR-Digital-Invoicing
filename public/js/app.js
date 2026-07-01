@@ -112,9 +112,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ── Env Toggle ────────────────────────────────────────────────────────────────
 function setupEnvToggle() {
   document.querySelectorAll('input[name="env"]').forEach(radio => {
-    radio.addEventListener('change', () => {
+    radio.addEventListener('change', async () => {
       activeEnv = radio.value;
       applyEnvUI();
+      if (appConfig.planetiveMode && activeEnv === 'sandbox') {
+        await onPlanetiveScenarioChanged();
+      }
       if (document.getElementById('tab-dashboard')?.classList.contains('active') &&
           typeof loadDashboard === 'function') {
         loadDashboard();
@@ -138,10 +141,9 @@ function applyEnvUI() {
     sidebarPill.className = 'sidebar-env-pill ' + activeEnv;
   }
 
-  // Sandbox-only fields
-  const isPlanetive = appConfig.planetiveMode;
-  document.getElementById('scenarioGroup').style.display = (isSandbox && !isPlanetive) ? '' : 'none';
-  document.getElementById('scenarioPresetGroup').style.display = (isSandbox && isPlanetive) ? '' : 'none';
+  // Sandbox scenario selector (planetive: SN018 + SN019; full: all scenarios)
+  document.getElementById('scenarioGroup').style.display = isSandbox ? '' : 'none';
+  document.getElementById('scenarioPresetGroup').style.display = 'none';
   document.getElementById('sandbox-info').style.display  = isSandbox ? 'flex' : 'none';
 
   // Production warning
@@ -182,6 +184,10 @@ async function loadConfig() {
 
     applyPlanetiveDefaults();
     renderSellerCard();
+
+    if (appConfig.planetiveMode && activeEnv === 'sandbox') {
+      await onPlanetiveScenarioChanged();
+    }
 
     // Token warning
     if (!appConfig.tokenConfigured) {
@@ -226,12 +232,6 @@ function applyPlanetiveDefaults() {
   const defaultId = appConfig.defaultScenarioId || 'SN019';
   const scenarioSel = document.getElementById('scenarioId');
   if (scenarioSel) scenarioSel.value = defaultId;
-
-  const badge = document.getElementById('scenario-preset-badge');
-  if (badge && appConfig.scenarioPreset) {
-    const preset = appConfig.scenarioPreset;
-    badge.textContent = `${preset.scenarioId} – ${preset.itemDefaults?.saleType || 'Services'}`;
-  }
 }
 
 function renderSellerCard() {
@@ -412,6 +412,16 @@ function setupInvoiceForm() {
     updateNoteFieldsVisibility();
   });
 
+  document.getElementById('scenarioId')?.addEventListener('change', () => {
+    invalidateScenarioRefCache();
+    onPlanetiveScenarioChanged();
+  });
+
+  document.getElementById('invoiceDate')?.addEventListener('change', () => {
+    invalidateScenarioRefCache();
+    onPlanetiveScenarioChanged();
+  });
+
   document.getElementById('exit-edit-mode-btn')?.addEventListener('click', () => {
     exitEditMode();
     switchToPanel('history');
@@ -423,7 +433,7 @@ function setupInvoiceForm() {
 
   document.getElementById('add-item-btn').addEventListener('click', addItem);
   document.getElementById('clear-btn').addEventListener('click', clearForm);
-  document.getElementById('sample-btn').addEventListener('click', loadSample);
+  document.getElementById('sample-btn').addEventListener('click', () => { loadSample(); });
 
   document.getElementById('invoice-form').addEventListener('submit', async e => {
     e.preventDefault();
@@ -446,7 +456,11 @@ function setTodayDate() {
 }
 
 function defaultSaleType() {
-  return appConfig.scenarioPreset?.itemDefaults?.saleType || 'Services';
+  const scenarioId = typeof getActiveScenarioId === 'function' ? getActiveScenarioId() : null;
+  const preset = scenarioId && typeof getClientScenarioPreset === 'function'
+    ? getClientScenarioPreset(scenarioId)
+    : appConfig.scenarioPreset;
+  return preset?.itemDefaults?.saleType || 'Services';
 }
 
 function getItemCards() {
@@ -475,19 +489,15 @@ function buildItemField(idx, name, label, opts = {}) {
 }
 
 function recalcRowTax(tr) {
-  const idx = tr.id.replace('item-row-', '');
-  const valueEl = tr.querySelector(`[name="valueSalesExcludingST_${idx}"]`);
-  const rateEl  = tr.querySelector(`[name="rate_${idx}"]`);
-  const taxEl   = tr.querySelector(`[name="salesTaxApplicable_${idx}"]`);
-  if (!valueEl || !rateEl || !taxEl) return;
-  taxEl.value = calculateSalesTax(valueEl.value, rateEl.value);
+  recalcRowTaxFromDom(tr);
 }
 
 function attachTaxListeners(tr) {
   const idx = tr.id.replace('item-row-', '');
-  ['quantity', 'valueSalesExcludingST', 'rate'].forEach(field => {
+  ['quantity', 'valueSalesExcludingST', 'rate', 'furtherTax', 'fedPayable', 'discount'].forEach(field => {
     const el = tr.querySelector(`[name="${field}_${idx}"]`);
     if (el) el.addEventListener('input', () => recalcRowTax(tr));
+    if (el) el.addEventListener('change', () => recalcRowTax(tr));
   });
 }
 
@@ -541,6 +551,15 @@ function addItem() {
 
   attachTaxListeners(card);
   refreshLucideIcons(card);
+
+  if (appConfig.planetiveMode && activeEnv === 'sandbox') {
+    const scenarioId = getActiveScenarioId();
+    const cached = scenarioRefCache[scenarioId];
+    if (cached) {
+      applyReferenceToItemRow(card, cached, getClientScenarioPreset(scenarioId)?.itemDefaults || {});
+      bindHsUomLookup(card, scenarioId);
+    }
+  }
 }
 
 function removeItem(idx) {
@@ -583,7 +602,13 @@ function buildPayload() {
       rate:                            g('rate'),
       uoM:                             g('uoM'),
       quantity:                        n('quantity'),
-      totalValues:                     n('totalValues'),
+      totalValues:                     n('totalValues') || calculateLineTotal(
+        n('valueSalesExcludingST'),
+        g('rate'),
+        n('furtherTax'),
+        n('fedPayable'),
+        n('discount')
+      ),
       valueSalesExcludingST:           n('valueSalesExcludingST'),
       fixedNotifiedValueOrRetailPrice: n('fixedNotifiedValueOrRetailPrice'),
       salesTaxApplicable:              calculateSalesTax(n('valueSalesExcludingST'), g('rate')),
@@ -905,6 +930,30 @@ async function pollInvoiceUntilDone(id, action) {
 
 async function submitInvoice(action) {
   if (!validateNoteFields()) return;
+
+  if (action === 'post' && activeEnv === 'sandbox') {
+    const scenarioId = document.getElementById('scenarioId')?.value || appConfig.defaultScenarioId;
+    if (scenarioId === 'SN018') {
+      if (!currentInvoiceId) {
+        alert('SN018 invoices must be validated before submit. Click Validate first.');
+        return;
+      }
+      try {
+        const inv = await apiFetch(`/api/invoices/${currentInvoiceId}`);
+        if (inv.workflow_status !== 'pending') {
+          alert(
+            'SN018 invoices must pass FBR validation before submit. ' +
+            `Current status: ${inv.workflow_status}. Click Validate first.`
+          );
+          return;
+        }
+      } catch (err) {
+        alert('Could not verify invoice status. Validate the invoice before submitting.');
+        return;
+      }
+    }
+  }
+
   const submitBtn   = document.getElementById('submit-btn');
   const validateBtn = document.getElementById('validate-btn');
   const activeBtn   = action === 'post' ? submitBtn : validateBtn;
@@ -1119,7 +1168,7 @@ function loadInvoiceForStandaloneNote(inv, noteType = 'debit') {
 
 window.loadInvoiceForStandaloneNote = loadInvoiceForStandaloneNote;
 
-function loadSample() {
+async function loadSample() {
   clearForm();
 
   document.getElementById('invoiceType').value          = 'Sale Invoice';
@@ -1137,14 +1186,43 @@ function loadSample() {
     applyPlanetiveDefaults();
   }
 
-  const preset = appConfig.scenarioPreset?.itemDefaults || {};
+  const scenarioId = typeof getActiveScenarioId === 'function'
+    ? getActiveScenarioId()
+    : (appConfig.defaultScenarioId || 'SN019');
+  const preset = (typeof getClientScenarioPreset === 'function'
+    ? getClientScenarioPreset(scenarioId)
+    : appConfig.scenarioPreset)?.itemDefaults || {};
+
+  let ref = null;
+  if (appConfig.planetiveMode && activeEnv === 'sandbox' && typeof applyPlanetiveScenarioReference === 'function') {
+    ref = await applyPlanetiveScenarioReference(scenarioId);
+  }
+
+  let hsCode = preset.hsCode || '9805.9200';
+  let rate   = preset.rate || '18.5%';
+  let uoM    = preset.uoM || 'Numbers, pieces, units';
+
+  if (scenarioId === 'SN018' && ref) {
+    hsCode = ref.serviceHsCodes?.[0]?.hsCode || hsCode;
+    rate   = ref.rates?.[0]?.rateDesc || rate;
+    uoM    = ref.uomList?.[0]?.description || uoM;
+    if (hsCode && typeof fetchHsUomForScenario === 'function') {
+      try {
+        const hsUom = await fetchHsUomForScenario(scenarioId, hsCode);
+        if (hsUom.uom?.[0]?.description) uoM = hsUom.uom[0].description;
+      } catch (err) {
+        console.warn('loadSample HS UOM:', err.message);
+      }
+    }
+  }
+
   const idx = '1';
   const set = (n, v) => { const el = document.querySelector(`[name="${n}_${idx}"]`); if (el) el.value = v; };
   set('productDescription', 'Consulting / software services');
-  set('hsCode', preset.hsCode || '9805.9200');
+  set('hsCode', hsCode);
   set('saleType', preset.saleType || defaultSaleType());
-  set('rate', preset.rate || '18.5%');
-  set('uoM', preset.uoM || 'Numbers, pieces, units');
+  set('rate', rate);
+  set('uoM', uoM);
   set('quantity', '1');
   set('valueSalesExcludingST', '1000');
   set('fixedNotifiedValueOrRetailPrice', '0');
@@ -1156,8 +1234,12 @@ function loadSample() {
 
   const row = document.getElementById('item-row-1');
   if (row) {
+    if (ref && typeof applyReferenceToItemRow === 'function') {
+      applyReferenceToItemRow(row, ref, { hsCode, rate, uoM, saleType: preset.saleType });
+      if (typeof bindHsUomLookup === 'function') bindHsUomLookup(row, scenarioId);
+    }
     recalcRowTax(row);
-    const tax = calculateSalesTax(1000, preset.rate || '18.5%');
+    const tax = calculateSalesTax(1000, rate);
     set('totalValues', String(1000 + tax));
   }
 }

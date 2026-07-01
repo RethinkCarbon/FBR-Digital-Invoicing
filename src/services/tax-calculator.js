@@ -1,5 +1,7 @@
 'use strict';
 
+const FED_ST_SALE_TYPE = 'Services (FED in ST Mode)';
+
 function parseTaxRate(rateStr) {
   if (rateStr === null || rateStr === undefined || rateStr === '') return 0;
   const match = String(rateStr).match(/([\d.]+)\s*%?/);
@@ -13,12 +15,22 @@ function calculateSalesTax(valueExclST, rateStr) {
   return Math.round(tax * 100) / 100;
 }
 
+function isFedInStModeSaleType(saleType) {
+  return String(saleType || '').trim().toLowerCase() === FED_ST_SALE_TYPE.toLowerCase();
+}
+
+/**
+ * salesTaxApplicable = Sales Tax or FED-in-ST-mode amount (FBR v1.12 field description).
+ * fedPayable is optional; only passed through when supplied on the item.
+ */
 function enrichItemTax(item) {
   const valueExcl = parseFloat(item.valueSalesExcludingST) || 0;
-  const salesTax  = calculateSalesTax(valueExcl, item.rate);
+  const stOrFed   = calculateSalesTax(valueExcl, item.rate);
+
   return {
     ...item,
-    salesTaxApplicable: salesTax,
+    salesTaxApplicable: stOrFed,
+    fedPayable:         parseFloat(item.fedPayable) || 0,
   };
 }
 
@@ -31,8 +43,10 @@ function enrichPayloadTax(payload) {
 }
 
 module.exports = {
+  FED_ST_SALE_TYPE,
   parseTaxRate,
   calculateSalesTax,
+  isFedInStModeSaleType,
   enrichItemTax,
   enrichPayloadTax,
 };
