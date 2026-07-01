@@ -1,6 +1,7 @@
 'use strict';
 
 const supabase = require('../supabase');
+const { normalizeProvinceForFbr } = require('../constants/provinces');
 
 async function listClients(q) {
   let query = supabase
@@ -32,7 +33,7 @@ async function createClient(input) {
       ntn:               input.ntn ?? null,
       registration_type: input.registration_type || 'Registered',
       address:           input.address,
-      province:          input.province,
+      province:          normalizeProvinceForFbr(input.province),
       email:             input.email ?? null,
       phone:             input.phone ?? null,
     })
@@ -50,7 +51,7 @@ async function updateClient(id, input) {
       ntn:               input.ntn ?? null,
       registration_type: input.registration_type || 'Registered',
       address:           input.address,
-      province:          input.province,
+      province:          normalizeProvinceForFbr(input.province),
       email:             input.email ?? null,
       phone:             input.phone ?? null,
     })

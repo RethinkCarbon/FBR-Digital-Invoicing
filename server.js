@@ -20,6 +20,7 @@ const settingsRouter = require('./src/routes/settings');
 const clientsRouter  = require('./src/routes/clients');
 const { isPlanetiveMode, APP_MODE } = require('./src/constants/app-mode');
 const { getDefaultScenarioId, getScenarioPreset } = require('./src/constants/scenario-presets');
+const { normalizeProvinceForFbr } = require('./src/constants/provinces');
 const {
   getCompanySettings,
   seedDefaultCompanySettings,
@@ -110,6 +111,12 @@ app.get('/api/config', async (req, res) => {
     let companySettings = null;
     try {
       companySettings = await getCompanySettings();
+      if (companySettings?.province) {
+        companySettings = {
+          ...companySettings,
+          province: normalizeProvinceForFbr(companySettings.province),
+        };
+      }
     } catch {
       companySettings = null;
     }

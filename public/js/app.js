@@ -252,7 +252,7 @@ function renderSellerCard() {
     <div class="seller-info-grid">
       <div><span class="detail-label">Business Name</span><strong>${escapeHtml(s.business_name)}</strong></div>
       <div><span class="detail-label">NTN</span><strong class="mono">${escapeHtml(s.ntn)}</strong></div>
-      <div><span class="detail-label">Province</span>${escapeHtml(s.province)}</div>
+      <div><span class="detail-label">Province</span>${escapeHtml(typeof provinceDisplayLabel === 'function' ? provinceDisplayLabel(s.province) : s.province)}</div>
       <div><span class="detail-label">Address</span>${escapeHtml(s.address)}</div>
       ${s.strn ? `<div><span class="detail-label">STRN</span>${escapeHtml(s.strn)}</div>` : ''}
     </div>
@@ -287,7 +287,7 @@ function fillBuyerFromClient(clientId) {
     buyerBusinessName:     client.name || '',
     buyerNTNCNIC:          client.ntn || '',
     buyerAddress:          client.address || '',
-    buyerProvince:         client.province || '',
+    buyerProvince:         normalizeProvinceForFbr(client.province || ''),
     buyerRegistrationType: client.registration_type || 'Registered',
   };
 
@@ -298,23 +298,8 @@ function fillBuyerFromClient(clientId) {
 }
 
 async function loadProvinces() {
-  let provinces = [];
-  try {
-    provinces = await apiFetch('/api/provinces');
-  } catch {
-    provinces = ['Punjab','Sindh','KPK','Balochistan','AJK','GB','ICT'].map(p => ({
-      stateProvinceDesc: p,
-    }));
-  }
-
   ['buyerProvince', 'settings-province', 'client-province'].forEach(id => {
-    const sel = document.getElementById(id);
-    if (!sel) return;
-    sel.innerHTML = '<option value="">— Select Province —</option>';
-    provinces.forEach(p => {
-      const label = p.stateProvinceDesc || p;
-      sel.appendChild(new Option(label, label));
-    });
+    populateProvinceSelect(document.getElementById(id));
   });
 }
 
@@ -519,6 +504,7 @@ function addItem() {
   ]).map(t => `<option value="${t}">${t}</option>`).join('');
 
   const defaultSale = defaultSaleType();
+  const ratePlaceholder = appConfig.planetiveMode ? '18.5%' : '18%';
 
   const card = document.createElement('div');
   card.className = 'item-card';
@@ -532,7 +518,7 @@ function addItem() {
       ${buildItemField(idx, 'hsCode', 'HS Code', { required: true, placeholder: '0101.2100' })}
       ${buildItemField(idx, 'productDescription', 'Description', { required: true, placeholder: 'Product description', span: 3 })}
       ${buildItemField(idx, 'saleType', 'Sale Type', { required: true, select: saleTypeOptions, span: 2 })}
-      ${buildItemField(idx, 'rate', 'Rate', { required: true, placeholder: '18%' })}
+      ${buildItemField(idx, 'rate', 'Rate', { required: true, placeholder: ratePlaceholder })}
       ${buildItemField(idx, 'uoM', 'UOM', { required: true, placeholder: 'Numbers, pieces, units', span: 2 })}
       ${buildItemField(idx, 'quantity', 'Qty', { required: true, type: 'number', step: '0.0001', value: '1' })}
       ${buildItemField(idx, 'totalValues', 'Total Value', { type: 'number' })}
@@ -573,7 +559,7 @@ function buildPayload() {
     invoiceDate:          val('invoiceDate'),
     buyerNTNCNIC:         val('buyerNTNCNIC'),
     buyerBusinessName:    val('buyerBusinessName'),
-    buyerProvince:        val('buyerProvince'),
+    buyerProvince:        normalizeProvinceForFbr(val('buyerProvince')),
     buyerAddress:         val('buyerAddress'),
     buyerRegistrationType: val('buyerRegistrationType'),
     invoiceRefNo:         val('invoiceRefNo'),
@@ -841,7 +827,9 @@ function loadInvoiceIntoForm(inv) {
   }
 
   setTimeout(() => {
-    if (p.buyerProvince) document.getElementById('buyerProvince').value = p.buyerProvince;
+    if (p.buyerProvince) {
+      document.getElementById('buyerProvince').value = normalizeProvinceForFbr(p.buyerProvince);
+    }
   }, 100);
 
   document.getElementById('items-body').innerHTML = '';
@@ -1130,20 +1118,21 @@ function loadSample() {
 
   setTimeout(() => {
     const bp = document.getElementById('buyerProvince');
-    for (let o of bp.options) if (o.text.toLowerCase().includes('punjab')) { bp.value = o.value; break; }
+    if (bp) bp.value = normalizeProvinceForFbr('PUNJAB');
   }, 100);
 
   if (activeEnv === 'sandbox') {
     applyPlanetiveDefaults();
   }
 
+  const preset = appConfig.scenarioPreset?.itemDefaults || {};
   const idx = '1';
   const set = (n, v) => { const el = document.querySelector(`[name="${n}_${idx}"]`); if (el) el.value = v; };
   set('productDescription', 'Consulting / software services');
-  set('hsCode', '9983.1300');
-  set('saleType', defaultSaleType());
-  set('rate', '18%');
-  set('uoM', 'Numbers, pieces, units');
+  set('hsCode', preset.hsCode || '9805.9200');
+  set('saleType', preset.saleType || defaultSaleType());
+  set('rate', preset.rate || '18.5%');
+  set('uoM', preset.uoM || 'Numbers, pieces, units');
   set('quantity', '1');
   set('valueSalesExcludingST', '1000');
   set('fixedNotifiedValueOrRetailPrice', '0');
@@ -1156,7 +1145,8 @@ function loadSample() {
   const row = document.getElementById('item-row-1');
   if (row) {
     recalcRowTax(row);
-    set('totalValues', '1180');
+    const tax = calculateSalesTax(1000, preset.rate || '18.5%');
+    set('totalValues', String(1000 + tax));
   }
 }
 

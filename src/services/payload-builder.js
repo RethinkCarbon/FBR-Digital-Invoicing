@@ -5,6 +5,7 @@ const { enrichPayloadTax } = require('./tax-calculator');
 const { getScenarioPreset, getDefaultScenarioId } = require('../constants/scenario-presets');
 const { isPlanetiveMode } = require('../constants/app-mode');
 const { validateAndResolveNote } = require('./note-validation-service');
+const { normalizeProvinceForFbr } = require('../constants/provinces');
 
 async function buildFbrPayload(rawPayload, { environment, clientId, skipNoteValidation = false } = {}) {
   let company;
@@ -35,8 +36,12 @@ async function buildFbrPayload(rawPayload, { environment, clientId, skipNoteVali
 
   payload.sellerBusinessName = company.business_name;
   payload.sellerNTNCNIC      = company.ntn;
-  payload.sellerProvince     = company.province;
+  payload.sellerProvince     = normalizeProvinceForFbr(company.province);
   payload.sellerAddress      = company.address;
+
+  if (payload.buyerProvince) {
+    payload.buyerProvince = normalizeProvinceForFbr(payload.buyerProvince);
+  }
 
   if (environment === 'sandbox') {
     const scenarioId = payload.scenarioId || (isPlanetiveMode() ? getDefaultScenarioId() : null);

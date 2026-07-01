@@ -17,7 +17,9 @@ async function loadSettingsForm() {
     document.getElementById('settings-logo-url').value        = settings.logo_url || '';
 
     const provSel = document.getElementById('settings-province');
-    if (settings.province) provSel.value = settings.province;
+    if (settings.province) {
+      provSel.value = normalizeProvinceForFbr(settings.province);
+    }
   } catch (err) {
     console.warn('Settings load:', err.message);
   }
@@ -35,7 +37,7 @@ async function saveSettings(e) {
     ntn:           document.getElementById('settings-ntn').value.trim(),
     strn:          document.getElementById('settings-strn').value.trim() || null,
     address:       document.getElementById('settings-address').value.trim(),
-    province:      document.getElementById('settings-province').value,
+    province:      normalizeProvinceForFbr(document.getElementById('settings-province').value),
     email:         document.getElementById('settings-email').value.trim() || null,
     phone:         document.getElementById('settings-phone').value.trim() || null,
     logo_url:      document.getElementById('settings-logo-url').value.trim() || null,

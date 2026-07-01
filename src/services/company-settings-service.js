@@ -1,13 +1,14 @@
 'use strict';
 
 const supabase = require('../supabase');
+const { normalizeProvinceForFbr } = require('../constants/provinces');
 
 const DEMO_COMPANY_SETTINGS = Object.freeze({
   business_name: 'Planetive (Pvt) Ltd',
   ntn:           '1234567-8',
   strn:          '12-34-5678-001-87',
   address:       'ISE Tower, 55-B, Jinnah Avenue, 9th Floor, Office 910, Islamabad 44000',
-  province:      'Islamabad',
+  province:      'CAPITAL TERRITORY',
   email:         'invoicing@planetive.org',
   phone:         '+92-42-35761234',
   logo_url:      '/logo.jpeg',
@@ -15,29 +16,32 @@ const DEMO_COMPANY_SETTINGS = Object.freeze({
 
 function inferProvinceFromAddress(address = '') {
   const lower = address.toLowerCase();
-  if (lower.includes('islamabad')) return 'Islamabad';
-  if (lower.includes('lahore')) return 'Punjab';
-  if (lower.includes('karachi')) return 'Sindh';
-  if (lower.includes('peshawar')) return 'KPK';
-  if (lower.includes('quetta')) return 'Balochistan';
+  if (lower.includes('islamabad')) return 'CAPITAL TERRITORY';
+  if (lower.includes('lahore')) return 'PUNJAB';
+  if (lower.includes('karachi')) return 'SINDH';
+  if (lower.includes('peshawar')) return 'KHYBER PAKHTUNKHWA';
+  if (lower.includes('quetta')) return 'BALOCHISTAN';
   return null;
 }
 
 async function syncCompanySettingsProvince(existing) {
   if (!existing?.id) return existing;
 
-  const inferred = inferProvinceFromAddress(existing.address);
-  if (!inferred || existing.province === inferred) return existing;
+  const normalized = normalizeProvinceForFbr(existing.province);
+  const inferred   = inferProvinceFromAddress(existing.address);
+  const target     = inferred || normalized;
+
+  if (!target || target === existing.province) return existing;
 
   const { data, error } = await supabase
     .from('company_settings')
-    .update({ province: inferred })
+    .update({ province: target })
     .eq('id', existing.id)
     .select('*')
     .single();
 
   if (error) throw new Error(error.message);
-  console.log(`✅ Company settings province synced to ${inferred}`);
+  console.log(`✅ Company settings province synced to ${target}`);
   return data;
 }
 
@@ -65,7 +69,7 @@ async function upsertCompanySettings(input) {
     ntn:           input.ntn,
     strn:          input.strn ?? null,
     address:       input.address,
-    province:      input.province,
+    province:      normalizeProvinceForFbr(input.province),
     email:         input.email ?? null,
     phone:         input.phone ?? null,
     logo_url:      input.logo_url ?? null,

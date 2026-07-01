@@ -24,7 +24,7 @@ async function loadClientsList() {
         <td><strong>${escapeClientHtml(c.name)}</strong></td>
         <td class="mono">${c.ntn || '—'}</td>
         <td>${c.registration_type}</td>
-        <td>${escapeClientHtml(c.province)}</td>
+        <td>${escapeClientHtml(typeof provinceDisplayLabel === 'function' ? provinceDisplayLabel(c.province) : c.province)}</td>
         <td>${escapeClientHtml(c.email || '—')}</td>
         <td class="history-actions">
           <button type="button" class="btn btn-ghost btn-sm" data-edit-client="${c.id}">Edit</button>
@@ -68,7 +68,7 @@ function openClientForm(id) {
       document.getElementById('client-ntn').value               = c.ntn || '';
       document.getElementById('client-registration-type').value = c.registration_type;
       document.getElementById('client-address').value           = c.address;
-      document.getElementById('client-province').value          = c.province;
+      document.getElementById('client-province').value          = normalizeProvinceForFbr(c.province);
       document.getElementById('client-email').value             = c.email || '';
       document.getElementById('client-phone').value             = c.phone || '';
     }
@@ -94,7 +94,7 @@ async function saveClient(e) {
     ntn:               document.getElementById('client-ntn').value.trim() || null,
     registration_type: document.getElementById('client-registration-type').value,
     address:           document.getElementById('client-address').value.trim(),
-    province:          document.getElementById('client-province').value,
+    province:          normalizeProvinceForFbr(document.getElementById('client-province').value),
     email:             document.getElementById('client-email').value.trim() || null,
     phone:             document.getElementById('client-phone').value.trim() || null,
   };

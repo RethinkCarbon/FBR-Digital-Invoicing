@@ -1,14 +1,18 @@
 'use strict';
 
 /**
- * Scenario presets — only fields confirmed by FBR DI API v1.12 scenario table (§9).
- * SN019 maps to saleType "Services". Rate, HS code, SRO fields are NOT preset
- * (they depend on service type / FBR reference APIs / sandbox test data).
+ * Scenario presets — fields confirmed by FBR DI API v1.12 scenario table (§9)
+ * and FBR reference / sandbox validation for Planetive SN019 (Services).
  */
 const SCENARIO_PRESETS = {
   SN019: {
     scenarioId: 'SN019',
-    itemDefaults: { saleType: 'Services' },
+    itemDefaults: {
+      saleType: 'Services',
+      hsCode:   '9805.9200',
+      rate:     '18.5%',
+      uoM:      'Numbers, pieces, units',
+    },
   },
   SN001: {
     scenarioId: 'SN001',
