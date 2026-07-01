@@ -5,6 +5,7 @@ const { WORKFLOW_STATUS, workflowToLegacy } = require('../constants/invoice-stat
 const {
   extractFbrStatus,
   extractItemStatuses,
+  normalizeFbrStatusForStorage,
 } = require('../constants/fbr-status');
 const { allocateInternalInvoiceNumber } = require('./invoice-number');
 const { getSalesDashboard } = require('./sales-dashboard-service');
@@ -277,7 +278,7 @@ async function finalizeFbrResult(id, {
   }
 
   const itemStatuses = extractItemStatuses(fbrData);
-  const fbrStatus    = extractFbrStatus(fbrData);
+  const fbrStatus    = normalizeFbrStatusForStorage(extractFbrStatus(fbrData));
 
   const patch = {
     workflow_status,

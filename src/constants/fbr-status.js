@@ -50,6 +50,14 @@ function extractFbrStatus(data) {
   return vr?.status || null;
 }
 
+/** Persist only FBR lifecycle statuses allowed by invoices_fbr_status_check; rejections → null. */
+function normalizeFbrStatusForStorage(status) {
+  if (status === null || status === undefined) return null;
+  const trimmed = String(status).trim();
+  if (!trimmed) return null;
+  return FBR_STATUSES.includes(trimmed) ? trimmed : null;
+}
+
 function extractItemStatuses(data) {
   const vr = data?.validationResponse || data;
   return vr?.invoiceStatuses ?? null;
@@ -64,4 +72,5 @@ module.exports = {
   isFbrSubmissionAccepted,
   extractFbrStatus,
   extractItemStatuses,
+  normalizeFbrStatusForStorage,
 };
