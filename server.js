@@ -28,7 +28,7 @@ const {
 const app         = express();
 const PORT        = process.env.PORT || 3000;
 const DEFAULT_ENV = (process.env.FBR_ENV || 'sandbox').toLowerCase();
-const TOKEN       = process.env.FBR_BEARER_TOKEN || '';
+const TOKEN       = (process.env.FBR_BEARER_TOKEN || '').trim();
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));

@@ -1140,11 +1140,11 @@ function loadSample() {
   const idx = '1';
   const set = (n, v) => { const el = document.querySelector(`[name="${n}_${idx}"]`); if (el) el.value = v; };
   set('productDescription', 'Consulting / software services');
+  set('hsCode', '9983.1300');
   set('saleType', defaultSaleType());
   set('rate', '18%');
   set('uoM', 'Numbers, pieces, units');
   set('quantity', '1');
-  set('totalValues', '0');
   set('valueSalesExcludingST', '1000');
   set('fixedNotifiedValueOrRetailPrice', '0');
   set('salesTaxWithheldAtSource', '0');
@@ -1154,7 +1154,10 @@ function loadSample() {
   set('discount', '0');
 
   const row = document.getElementById('item-row-1');
-  if (row) recalcRowTax(row);
+  if (row) {
+    recalcRowTax(row);
+    set('totalValues', '1180');
+  }
 }
 
 // ── Reference Data Panel ──────────────────────────────────────────────────────

@@ -175,6 +175,10 @@ async function callFbr(environment, payload, mode, options = {}) {
     return createMockFbrResponse(payload, config.scenario);
   }
 
+  if (!TOKEN) {
+    throw new Error('FBR_BEARER_TOKEN is not configured');
+  }
+
   return fbrPost(url, payload);
 }
 

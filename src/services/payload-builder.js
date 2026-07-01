@@ -54,6 +54,14 @@ async function buildFbrPayload(rawPayload, { environment, clientId, skipNoteVali
     }
   }
 
+  if (Array.isArray(payload.items)) {
+    payload.items.forEach((item, index) => {
+      if (!String(item.hsCode || '').trim()) {
+        throw new Error(`hsCode is required on line item ${index + 1}`);
+      }
+    });
+  }
+
   return enrichPayloadTax(payload);
 }
 
