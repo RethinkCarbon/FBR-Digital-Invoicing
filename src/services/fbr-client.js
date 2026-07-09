@@ -14,19 +14,23 @@ const {
   summarizeBody,
 } = require('../debug/fbr-validate-debug');
 
-const TOKEN = (process.env.FBR_BEARER_TOKEN || '').trim();
+const SANDBOX_TOKEN    = (process.env.FBR_SANDBOX_TOKEN || process.env.FBR_BEARER_TOKEN || '').trim();
+const PRODUCTION_TOKEN = (process.env.FBR_PRODUCTION_TOKEN || process.env.FBR_BEARER_TOKEN || '').trim();
 
-function authHeader() {
-  return { Authorization: `Bearer ${TOKEN}` };
+function authHeader(environment = 'sandbox') {
+  const token = environment === 'production' ? PRODUCTION_TOKEN : SANDBOX_TOKEN;
+  if (!token) throw new Error('FBR bearer token is not configured for ' + environment);
+  return { Authorization: `Bearer ${token}` };
 }
 
 /** TEMPORARY — remove after 401 diagnosis */
-function logFbrAuthDebug(url) {
-  const authValue = `Bearer ${TOKEN}`;
+function logFbrAuthDebug(url, environment = 'sandbox') {
+  const token = environment === 'production' ? PRODUCTION_TOKEN : SANDBOX_TOKEN;
+  const authValue = `Bearer ${token}`;
   console.log('[fbr-auth-debug] URL:', url);
-  console.log('[fbr-auth-debug] Token (first 20 chars):', TOKEN.slice(0, 20));
+  console.log('[fbr-auth-debug] Token (first 20 chars):', token.slice(0, 20));
   console.log('[fbr-auth-debug] Authorization (first 30 chars):', authValue.slice(0, 30));
-  console.log('[fbr-auth-debug] Token length:', TOKEN.length);
+  console.log('[fbr-auth-debug] Token length:', token.length);
 }
 
 function getValidationErrorMessage(data) {
@@ -208,14 +212,14 @@ function formatAxiosError(err) {
   return err.message || 'Unknown FBR error';
 }
 
-async function fbrPost(url, body, { debug = false } = {}) {
+async function fbrPost(url, body, { debug = false, environment = 'sandbox' } = {}) {
   if (debug) logFbrValidateStart(url, body);
 
-  logFbrAuthDebug(url);
+  logFbrAuthDebug(url, environment);
 
   try {
     const res = await axios.post(url, body, {
-      headers: { ...authHeader(), 'Content-Type': 'application/json' },
+      headers: { ...authHeader(environment), 'Content-Type': 'application/json' },
       timeout: 15000,
     });
     if (debug) logFbrValidateSuccess(res);
@@ -247,13 +251,9 @@ async function callFbr(environment, payload, mode, options = {}) {
     return createMockFbrResponse(payload, config.scenario);
   }
 
-  if (!TOKEN) {
-    throw new Error('FBR_BEARER_TOKEN is not configured');
-  }
-
   const debugFbrPayload = isFbrPayloadDebugEnabled();
   const debugValidate = mode === 'validate' && isFbrValidateDebugEnabled();
-  return fbrPost(url, payload, { debug: debugValidate || debugFbrPayload });
+  return fbrPost(url, payload, { debug: debugValidate || debugFbrPayload, environment });
 }
 
 module.exports = {

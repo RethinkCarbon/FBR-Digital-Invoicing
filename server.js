@@ -31,7 +31,8 @@ const {
 const app         = express();
 const PORT        = process.env.PORT || 3000;
 const DEFAULT_ENV = (process.env.FBR_ENV || 'sandbox').toLowerCase();
-const TOKEN       = (process.env.FBR_BEARER_TOKEN || '').trim();
+const SANDBOX_TOKEN    = (process.env.FBR_SANDBOX_TOKEN || process.env.FBR_BEARER_TOKEN || '').trim();
+const PRODUCTION_TOKEN = (process.env.FBR_PRODUCTION_TOKEN || process.env.FBR_BEARER_TOKEN || '').trim();
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -44,7 +45,8 @@ function resolveEnv(req) {
 }
 
 function authHeader() {
-  return { Authorization: `Bearer ${TOKEN}` };
+  if (!SANDBOX_TOKEN) throw new Error('FBR bearer token is not configured for sandbox');
+  return { Authorization: `Bearer ${SANDBOX_TOKEN}` };
 }
 
 async function fbrGet(url, params = {}) {
@@ -138,7 +140,7 @@ app.get('/api/config', async (req, res) => {
       appMode:              APP_MODE,
       planetiveMode:        planetive,
       defaultEnv:           DEFAULT_ENV,
-      tokenConfigured:      TOKEN.length > 0,
+      tokenConfigured:      SANDBOX_TOKEN.length > 0 || PRODUCTION_TOKEN.length > 0,
       mockMode:             getMockConfig().enabled,
       mockConfig:           getMockConfig(),
       mockScenarios:        MOCK_SCENARIOS,
@@ -259,7 +261,8 @@ app.get('/api/health', (req, res) => {
 function logStartupBanner() {
   console.log(`Environment : ${DEFAULT_ENV.toUpperCase()} (default, switchable from UI)`);
   console.log(`App mode    : ${APP_MODE}${isPlanetiveMode() ? ' (SN019/SN018 services workflow)' : ''}`);
-  console.log(`Token set   : ${TOKEN.length > 0 ? 'YES' : 'NO — set FBR_BEARER_TOKEN in .env'}`);
+  console.log(`Sandbox token    : ${SANDBOX_TOKEN.length > 0 ? 'YES' : 'NO — set FBR_SANDBOX_TOKEN or FBR_BEARER_TOKEN in .env'}`);
+  console.log(`Production token   : ${PRODUCTION_TOKEN.length > 0 ? 'YES' : 'NO — set FBR_PRODUCTION_TOKEN or FBR_BEARER_TOKEN in .env'}`);
   if (getMockConfig().enabled) {
     const mock = getMockConfig();
     console.log('FBR mock    : ON (invoice submit/validate return fake responses)');
