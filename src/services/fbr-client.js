@@ -20,6 +20,15 @@ function authHeader() {
   return { Authorization: `Bearer ${TOKEN}` };
 }
 
+/** TEMPORARY — remove after 401 diagnosis */
+function logFbrAuthDebug(url) {
+  const authValue = `Bearer ${TOKEN}`;
+  console.log('[fbr-auth-debug] URL:', url);
+  console.log('[fbr-auth-debug] Token (first 20 chars):', TOKEN.slice(0, 20));
+  console.log('[fbr-auth-debug] Authorization (first 30 chars):', authValue.slice(0, 30));
+  console.log('[fbr-auth-debug] Token length:', TOKEN.length);
+}
+
 function getValidationErrorMessage(data) {
   const vr = data?.validationResponse || data;
 
@@ -201,6 +210,8 @@ function formatAxiosError(err) {
 
 async function fbrPost(url, body, { debug = false } = {}) {
   if (debug) logFbrValidateStart(url, body);
+
+  logFbrAuthDebug(url);
 
   try {
     const res = await axios.post(url, body, {

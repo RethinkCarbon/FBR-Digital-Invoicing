@@ -8,6 +8,13 @@ const SCENARIO_PRESETS = {
   SN019: {
     scenarioId: 'SN019',
     description: 'Services rendered or provided',
+    buyerDefaults: {
+      buyerNTNCNIC:          '1234567',
+      buyerBusinessName:     'Sample Client Ltd.',
+      buyerProvince:         'PUNJAB',
+      buyerAddress:          'Lahore',
+      buyerRegistrationType: 'Unregistered',
+    },
     itemDefaults: {
       saleType: 'Services',
       hsCode:   '9805.9200',
@@ -19,6 +26,13 @@ const SCENARIO_PRESETS = {
   SN018: {
     scenarioId: 'SN018',
     description: 'Services Rendered or Provided Where FED is Charged in ST Mode',
+    buyerDefaults: {
+      buyerNTNCNIC:          '1234567',
+      buyerBusinessName:     'Sample Client Ltd.',
+      buyerProvince:         'PUNJAB',
+      buyerAddress:          'Lahore',
+      buyerRegistrationType: 'Unregistered',
+    },
     itemDefaults: {
       saleType: 'Services (FED in ST Mode)',
     },

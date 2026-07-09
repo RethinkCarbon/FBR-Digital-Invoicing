@@ -5,7 +5,7 @@ const { enrichPayloadTax } = require('./tax-calculator');
 const { getScenarioPreset, getDefaultScenarioId } = require('../constants/scenario-presets');
 const { isPlanetiveMode } = require('../constants/app-mode');
 const { validateAndResolveNote } = require('./note-validation-service');
-const { normalizeProvinceForFbr } = require('../constants/provinces');
+const { requireValidFbrProvince } = require('../constants/provinces');
 
 async function buildFbrPayload(rawPayload, { environment, clientId, skipNoteValidation = false } = {}) {
   let company;
@@ -36,12 +36,8 @@ async function buildFbrPayload(rawPayload, { environment, clientId, skipNoteVali
 
   payload.sellerBusinessName = company.business_name;
   payload.sellerNTNCNIC      = company.ntn;
-  payload.sellerProvince     = normalizeProvinceForFbr(company.province);
+  payload.sellerProvince     = requireValidFbrProvince(company.province, 'Seller province');
   payload.sellerAddress      = company.address;
-
-  if (payload.buyerProvince) {
-    payload.buyerProvince = normalizeProvinceForFbr(payload.buyerProvince);
-  }
 
   if (environment === 'sandbox') {
     const scenarioId = payload.scenarioId || (isPlanetiveMode() ? getDefaultScenarioId() : null);
@@ -51,6 +47,13 @@ async function buildFbrPayload(rawPayload, { environment, clientId, skipNoteVali
     payload.scenarioId = scenarioId;
 
     const preset = getScenarioPreset(scenarioId);
+    if (preset?.buyerDefaults) {
+      for (const [key, value] of Object.entries(preset.buyerDefaults)) {
+        if (value != null && !String(payload[key] ?? '').trim()) {
+          payload[key] = value;
+        }
+      }
+    }
     if (preset?.itemDefaults && Array.isArray(payload.items)) {
       payload.items = payload.items.map(item => ({
         ...item,
@@ -58,6 +61,8 @@ async function buildFbrPayload(rawPayload, { environment, clientId, skipNoteVali
       }));
     }
   }
+
+  payload.buyerProvince = requireValidFbrProvince(payload.buyerProvince, 'Buyer province');
 
   if (Array.isArray(payload.items)) {
     payload.items.forEach((item, index) => {

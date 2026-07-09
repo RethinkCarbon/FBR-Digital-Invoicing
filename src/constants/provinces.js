@@ -58,6 +58,22 @@ function normalizeProvinceForFbr(value) {
   return trimmed;
 }
 
+function isValidFbrProvince(value) {
+  const normalized = normalizeProvinceForFbr(value);
+  return Boolean(normalized && OFFICIAL_BY_UPPER.has(String(normalized).toUpperCase()));
+}
+
+function requireValidFbrProvince(value, fieldLabel = 'Province') {
+  const normalized = normalizeProvinceForFbr(value);
+  if (!isValidFbrProvince(normalized)) {
+    throw new Error(
+      `${fieldLabel} is invalid for FBR (${JSON.stringify(value ?? '')}). ` +
+      'Use an exact stateProvinceDesc value from GET /api/provinces.'
+    );
+  }
+  return normalized;
+}
+
 function provinceDisplayLabel(official) {
   if (!official) return official;
   const normalized = normalizeProvinceForFbr(official);
@@ -81,6 +97,8 @@ function getProvinceCode(province) {
 module.exports = {
   FBR_PROVINCES,
   normalizeProvinceForFbr,
+  isValidFbrProvince,
+  requireValidFbrProvince,
   provinceDisplayLabel,
   listFbrProvinces,
   getProvinceCode,

@@ -433,7 +433,12 @@ function setupInvoiceForm() {
 
   document.getElementById('add-item-btn').addEventListener('click', addItem);
   document.getElementById('clear-btn').addEventListener('click', clearForm);
-  document.getElementById('sample-btn').addEventListener('click', () => { loadSample(); });
+  document.getElementById('sample-btn').addEventListener('click', () => {
+    loadSample().catch(err => {
+      console.error('Load Sample failed:', err);
+      alert(`Load Sample failed: ${err.message}`);
+    });
+  });
 
   document.getElementById('invoice-form').addEventListener('submit', async e => {
     e.preventDefault();
@@ -1174,50 +1179,74 @@ function loadInvoiceForStandaloneNote(inv, noteType = 'debit') {
 window.loadInvoiceForStandaloneNote = loadInvoiceForStandaloneNote;
 
 async function loadSample() {
-  clearForm();
-
-  document.getElementById('invoiceType').value          = 'Sale Invoice';
-  document.getElementById('buyerNTNCNIC').value          = '1234567';
-  document.getElementById('buyerBusinessName').value     = 'Sample Client Ltd.';
-  document.getElementById('buyerAddress').value          = 'Lahore';
-  document.getElementById('buyerRegistrationType').value = 'Registered';
-
-  setTimeout(() => {
-    const bp = document.getElementById('buyerProvince');
-    if (bp) bp.value = normalizeProvinceForFbr('PUNJAB');
-  }, 100);
-
-  if (activeEnv === 'sandbox') {
-    applyPlanetiveDefaults();
-  }
-
-  const scenarioId = typeof getActiveScenarioId === 'function'
+  const selectedScenario = typeof getActiveScenarioId === 'function'
     ? getActiveScenarioId()
     : (appConfig.defaultScenarioId || 'SN019');
-  const preset = (typeof getClientScenarioPreset === 'function'
-    ? getClientScenarioPreset(scenarioId)
-    : appConfig.scenarioPreset)?.itemDefaults || {};
 
-  let ref = null;
-  if (appConfig.planetiveMode && activeEnv === 'sandbox' && typeof applyPlanetiveScenarioReference === 'function') {
-    ref = await applyPlanetiveScenarioReference(scenarioId);
+  clearForm();
+
+  // clearForm() resets scenario via applyPlanetiveDefaults — restore user selection
+  if (activeEnv === 'sandbox') {
+    const scenarioSel = document.getElementById('scenarioId');
+    if (scenarioSel && selectedScenario) scenarioSel.value = selectedScenario;
   }
 
-  let hsCode = preset.hsCode || '9805.9200';
-  let rate   = preset.rate || '18.5%';
-  let uoM    = preset.uoM || 'Numbers, pieces, units';
+  const scenarioId = selectedScenario || appConfig.defaultScenarioId || 'SN019';
+  const preset = (typeof getClientScenarioPreset === 'function'
+    ? getClientScenarioPreset(scenarioId)
+    : appConfig.scenarioPreset) || {};
+  const defaults = preset.itemDefaults || {};
+  const buyer = preset.buyerDefaults || {};
 
-  if (scenarioId === 'SN018' && ref) {
-    hsCode = ref.serviceHsCodes?.[0]?.hsCode || hsCode;
-    rate   = ref.rates?.[0]?.rateDesc || rate;
-    uoM    = ref.uomList?.[0]?.description || uoM;
-    if (hsCode && typeof fetchHsUomForScenario === 'function') {
-      try {
-        const hsUom = await fetchHsUomForScenario(scenarioId, hsCode);
-        if (hsUom.uom?.[0]?.description) uoM = hsUom.uom[0].description;
-      } catch (err) {
-        console.warn('loadSample HS UOM:', err.message);
+  document.getElementById('invoiceType').value = 'Sale Invoice';
+  document.getElementById('buyerNTNCNIC').value = buyer.buyerNTNCNIC || '1234567';
+  document.getElementById('buyerBusinessName').value = buyer.buyerBusinessName || 'Sample Client Ltd.';
+  document.getElementById('buyerAddress').value = buyer.buyerAddress || 'Lahore';
+  document.getElementById('buyerRegistrationType').value =
+    buyer.buyerRegistrationType || 'Unregistered';
+
+  const bp = document.getElementById('buyerProvince');
+  if (bp) bp.value = normalizeProvinceForFbr(buyer.buyerProvince || 'PUNJAB');
+
+  let hsCode   = defaults.hsCode || '9805.9200';
+  let rate     = defaults.rate || '18.5%';
+  let uoM      = defaults.uoM || 'Numbers, pieces, units';
+  const saleType = defaults.saleType || defaultSaleType();
+
+  let ref = null;
+  if (appConfig.planetiveMode && activeEnv === 'sandbox' && typeof fetchScenarioReference === 'function') {
+    try {
+      ref = await fetchScenarioReference(scenarioId);
+      if (scenarioId === 'SN018') {
+        hsCode = ref.serviceHsCodes?.[0]?.hsCode || hsCode;
+        rate   = (typeof resolveRateFromReference === 'function'
+          ? resolveRateFromReference(ref.rates, rate)
+          : ref.rates?.[0]?.rateDesc) || rate;
+        uoM    = (typeof resolveUomFromReference === 'function'
+          ? resolveUomFromReference(ref.uomList, uoM)
+          : ref.uomList?.[0]?.description) || uoM;
+        if (hsCode && typeof fetchHsUomForScenario === 'function') {
+          try {
+            const hsUom = await fetchHsUomForScenario(scenarioId, hsCode);
+            if (hsUom.uom?.[0]?.description) {
+              uoM = (typeof resolveUomFromReference === 'function'
+                ? resolveUomFromReference(hsUom.uom, uoM)
+                : hsUom.uom[0].description) || uoM;
+            }
+          } catch (err) {
+            console.warn('loadSample HS UOM:', err.message);
+          }
+        }
+      } else if (ref) {
+        rate = (typeof resolveRateFromReference === 'function'
+          ? resolveRateFromReference(ref.rates, rate)
+          : ref.rates?.[0]?.rateDesc) || rate;
+        uoM  = (typeof resolveUomFromReference === 'function'
+          ? resolveUomFromReference(ref.uomList, uoM)
+          : ref.uomList?.[0]?.description) || uoM;
       }
+    } catch (err) {
+      console.warn('loadSample: scenario reference unavailable, using preset defaults:', err.message);
     }
   }
 
@@ -1225,7 +1254,7 @@ async function loadSample() {
   const set = (n, v) => { const el = document.querySelector(`[name="${n}_${idx}"]`); if (el) el.value = v; };
   set('productDescription', 'Consulting / software services');
   set('hsCode', hsCode);
-  set('saleType', preset.saleType || defaultSaleType());
+  set('saleType', saleType);
   set('rate', rate);
   set('uoM', uoM);
   set('quantity', '1');
@@ -1240,11 +1269,13 @@ async function loadSample() {
   const row = document.getElementById('item-row-1');
   if (row) {
     if (ref && typeof applyReferenceToItemRow === 'function') {
-      applyReferenceToItemRow(row, ref, { hsCode, rate, uoM, saleType: preset.saleType });
+      applyReferenceToItemRow(row, ref, { hsCode, rate, uoM, saleType });
       if (typeof bindHsUomLookup === 'function') bindHsUomLookup(row, scenarioId);
     }
     recalcRowTax(row);
-    const tax = calculateSalesTax(1000, rate);
+    const rateEl = row.querySelector('[name="rate_1"]');
+    const effectiveRate = rateEl?.value || rate;
+    const tax = calculateSalesTax(1000, effectiveRate);
     set('totalValues', String(1000 + tax));
   }
 }
