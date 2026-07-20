@@ -7,6 +7,40 @@ const { isPlanetiveMode } = require('../constants/app-mode');
 const { validateAndResolveNote } = require('./note-validation-service');
 const { requireValidFbrProvince } = require('../constants/provinces');
 
+function sanitizeItemForFbr(item, index) {
+  const cleaned = { ...item };
+
+  const sro = String(cleaned.sroScheduleNo ?? '').trim();
+  if (!sro || sro === 'SRO123') {
+    delete cleaned.sroScheduleNo;
+  } else {
+    cleaned.sroScheduleNo = sro;
+  }
+
+  const sroItem = String(cleaned.sroItemSerialNo ?? '').trim();
+  if (!sroItem) {
+    delete cleaned.sroItemSerialNo;
+  } else {
+    cleaned.sroItemSerialNo = sroItem;
+  }
+
+  // FBR requires this field; keep 0 when missing
+  if (cleaned.fixedNotifiedValueOrRetailPrice == null || cleaned.fixedNotifiedValueOrRetailPrice === '') {
+    cleaned.fixedNotifiedValueOrRetailPrice = 0;
+  } else {
+    cleaned.fixedNotifiedValueOrRetailPrice = parseFloat(cleaned.fixedNotifiedValueOrRetailPrice) || 0;
+  }
+
+  if (!String(cleaned.hsCode || '').trim()) {
+    throw new Error(`hsCode is required on line item ${index + 1}`);
+  }
+  if (!String(cleaned.rate || '').trim()) {
+    throw new Error(`rate is required on line item ${index + 1}`);
+  }
+
+  return cleaned;
+}
+
 async function buildFbrPayload(rawPayload, { environment, clientId, skipNoteValidation = false } = {}) {
   let company;
   try {
@@ -65,14 +99,7 @@ async function buildFbrPayload(rawPayload, { environment, clientId, skipNoteVali
   payload.buyerProvince = requireValidFbrProvince(payload.buyerProvince, 'Buyer province');
 
   if (Array.isArray(payload.items)) {
-    payload.items.forEach((item, index) => {
-      if (!String(item.hsCode || '').trim()) {
-        throw new Error(`hsCode is required on line item ${index + 1}`);
-      }
-      if (!String(item.rate || '').trim()) {
-        throw new Error(`rate is required on line item ${index + 1}`);
-      }
-    });
+    payload.items = payload.items.map((item, index) => sanitizeItemForFbr(item, index));
   }
 
   return enrichPayloadTax(payload);

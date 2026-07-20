@@ -367,8 +367,10 @@ function drawFooterRow(doc, data, y, pageW) {
   if (data.qrBuffer) {
     doc.image(data.qrBuffer, rightX + rightW - 80, qrY, { width: 80, height: 80 });
     doc.fillColor(C.muted).font('Helvetica').fontSize(7)
-      .text('Scan to verify', rightX, qrY + 84, { width: rightW, align: 'right' });
-    qrY += 96;
+      .text('Scan to verify invoice details', rightX, qrY + 84, { width: rightW, align: 'right' });
+    doc.fillColor('#8A9A90').font('Helvetica').fontSize(6)
+      .text(`IRN: ${data.irnDisplay || '—'}`, rightX, qrY + 94, { width: rightW, align: 'right' });
+    qrY += 108;
   }
 
   return Math.max(ly, qrY) + 12;

@@ -727,6 +727,28 @@
 
 </div><!-- /app-shell -->
 
+<!-- HS Code search modal -->
+<div id="hs-search-overlay" class="hs-search-overlay" hidden>
+  <div class="hs-search-modal" role="dialog" aria-modal="true" aria-labelledby="hs-search-title">
+    <div class="hs-search-header">
+      <h3 id="hs-search-title">Find HS Code</h3>
+      <button type="button" id="hs-search-close" class="hs-search-close" aria-label="Close">×</button>
+    </div>
+    <div class="hs-common-services">
+      <p class="hs-common-label">Common Services</p>
+      <div id="hs-common-chips" class="hs-chips"></div>
+    </div>
+    <input
+      type="search"
+      id="hs-search-input"
+      class="hs-search-input"
+      placeholder="Search by keyword e.g. consulting, software..."
+      autocomplete="off"
+    />
+    <div id="hs-search-results" class="hs-search-results" aria-live="polite"></div>
+  </div>
+</div>
+
 <script src="js/tax-utils.js"></script>
 <script src="js/provinces.js"></script>
 <script src="js/scenario-reference.js"></script>

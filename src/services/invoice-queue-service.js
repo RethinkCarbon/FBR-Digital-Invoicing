@@ -48,7 +48,11 @@ async function processInvoiceJob(invoice) {
     }
 
     const qrCode     = (accepted && mode === 'submit' && fbrData.invoiceNumber)
-      ? await generateInvoiceQR(fbrData.invoiceNumber)
+      ? await generateInvoiceQR({
+          ...invoice,
+          fbr_invoice_number: fbrData.invoiceNumber,
+          invoiceNumber:      fbrData.invoiceNumber,
+        })
       : null;
 
     return finalizeFbrResult(invoice.id, {

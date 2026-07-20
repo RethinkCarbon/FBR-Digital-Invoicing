@@ -118,7 +118,8 @@ function generateInvoiceHTML(data) {
 
   const qrBlock = qrCode
     ? `<img src="${qrCode}" alt="FBR verification QR code" class="qr-image" />
-       <p class="qr-label">Scan to verify</p>`
+       <p class="qr-label">Scan to verify invoice details</p>
+       <p class="qr-irn">IRN: ${escapeHtml(irnDisplay)}</p>`
     : `<p class="qr-pending">QR code pending</p>`;
 
   return `<!DOCTYPE html>
@@ -418,6 +419,14 @@ function generateInvoiceHTML(data) {
       margin-top: 0.375rem;
       text-transform: uppercase;
       letter-spacing: 0.06em;
+    }
+
+    .qr-irn {
+      font-size: 0.625rem;
+      color: #8A9A90;
+      margin-top: 0.2rem;
+      font-family: ui-monospace, monospace;
+      word-break: break-all;
     }
 
     .qr-pending {

@@ -141,6 +141,7 @@ function applyReferenceToItemRow(row, ref, presetDefaults = {}) {
 
   recalcRowTaxFromDom(row);
   if (typeof attachTaxListeners === 'function') attachTaxListeners(row);
+  if (typeof applyFurtherTaxForRow === 'function') applyFurtherTaxForRow(row, { expandAdvanced: false });
 }
 
 async function bindHsUomLookup(row, scenarioId) {
@@ -184,6 +185,9 @@ async function applyPlanetiveScenarioReference(scenarioId) {
     getItemCards().forEach(row => {
       applyReferenceToItemRow(row, ref, defaults);
       bindHsUomLookup(row, scenarioId);
+      if (typeof bindSaleTypeRateLookup === 'function') bindSaleTypeRateLookup(row);
+      if (typeof applyFurtherTaxForRow === 'function') applyFurtherTaxForRow(row);
+      recalcRowTaxFromDom(row);
     });
 
     return ref;

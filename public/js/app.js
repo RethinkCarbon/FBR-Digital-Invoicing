@@ -295,6 +295,8 @@ function fillBuyerFromClient(clientId) {
     const el = document.getElementById(id);
     if (el) el.value = value;
   });
+
+  if (typeof syncFurtherTaxAllRows === 'function') syncFurtherTaxAllRows();
 }
 
 async function loadProvinces() {
@@ -431,6 +433,12 @@ function setupInvoiceForm() {
     fillBuyerFromClient(e.target.value);
   });
 
+  document.getElementById('buyerRegistrationType')?.addEventListener('change', () => {
+    if (typeof syncFurtherTaxAllRows === 'function') syncFurtherTaxAllRows();
+  });
+
+  setupHsCodeSearch();
+
   document.getElementById('add-item-btn').addEventListener('click', addItem);
   document.getElementById('clear-btn').addEventListener('click', clearForm);
   document.getElementById('sample-btn').addEventListener('click', () => {
@@ -479,30 +487,388 @@ function itemFieldLabel(text, required = false) {
 function buildItemField(idx, name, label, opts = {}) {
   const span = opts.span || 1;
   const reqLabel = itemFieldLabel(label, opts.required);
+  const extraClass = opts.fieldClass ? ` ${opts.fieldClass}` : '';
   let control;
 
   if (opts.select) {
     control = `<select name="${name}_${idx}">${opts.select}</select>`;
   } else if (opts.type === 'number') {
-    const ro = opts.readonly ? ' readonly class="tax-readonly" title="Auto-calculated from value × rate"' : '';
+    const title = opts.readonly
+      ? (opts.readonlyTitle || 'Auto-calculated')
+      : '';
+    const ro = opts.readonly
+      ? ` readonly class="tax-readonly" title="${title}"`
+      : '';
     control = `<input type="number" name="${name}_${idx}" placeholder="${opts.placeholder || '0'}" step="${opts.step || '0.01'}" min="0" value="${opts.value ?? '0'}"${ro} />`;
   } else {
     control = `<input type="text" name="${name}_${idx}" placeholder="${opts.placeholder || ''}" />`;
   }
 
-  return `<div class="item-field item-field-span-${span}"><label>${reqLabel}</label>${control}</div>`;
+  const after = opts.afterHtml || '';
+  return `<div class="item-field item-field-span-${span}${extraClass}"><label>${reqLabel}</label>${control}${after}</div>`;
 }
 
 function recalcRowTax(tr) {
   recalcRowTaxFromDom(tr);
 }
 
+function expandItemAdvancedFields(row) {
+  if (!row) return;
+  const adv = row.querySelector('.item-fields-advanced');
+  const btn = row.querySelector('.item-advanced-toggle');
+  if (!adv) return;
+  adv.hidden = false;
+  if (btn) {
+    btn.textContent = '－ Hide advanced fields';
+    btn.setAttribute('aria-expanded', 'true');
+  }
+}
+
+function collapseItemAdvancedFields(row) {
+  if (!row) return;
+  const adv = row.querySelector('.item-fields-advanced');
+  const btn = row.querySelector('.item-advanced-toggle');
+  if (!adv) return;
+  adv.hidden = true;
+  if (btn) {
+    btn.textContent = '＋ Show advanced fields';
+    btn.setAttribute('aria-expanded', 'false');
+  }
+}
+
+function toggleItemAdvancedFields(row) {
+  const adv = row?.querySelector('.item-fields-advanced');
+  if (!adv) return;
+  if (adv.hidden) expandItemAdvancedFields(row);
+  else collapseItemAdvancedFields(row);
+}
+
+function attachAdvancedToggle(row) {
+  const btn = row.querySelector('.item-advanced-toggle');
+  if (!btn) return;
+  if (btn._advHandler) btn.removeEventListener('click', btn._advHandler);
+  btn._advHandler = e => {
+    e.preventDefault();
+    toggleItemAdvancedFields(row);
+  };
+  btn.addEventListener('click', btn._advHandler);
+}
+
 function attachTaxListeners(tr) {
   const idx = tr.id.replace('item-row-', '');
   ['quantity', 'valueSalesExcludingST', 'rate', 'furtherTax', 'fedPayable', 'discount'].forEach(field => {
     const el = tr.querySelector(`[name="${field}_${idx}"]`);
-    if (el) el.addEventListener('input', () => recalcRowTax(tr));
-    if (el) el.addEventListener('change', () => recalcRowTax(tr));
+    if (!el) return;
+    if (el._taxHandler) {
+      el.removeEventListener('input', el._taxHandler);
+      el.removeEventListener('change', el._taxHandler);
+    }
+    el._taxHandler = () => {
+      if (field === 'valueSalesExcludingST' && typeof applyFurtherTaxForRow === 'function') {
+        applyFurtherTaxForRow(tr);
+      }
+      recalcRowTax(tr);
+    };
+    el.addEventListener('input', el._taxHandler);
+    el.addEventListener('change', el._taxHandler);
+  });
+}
+
+function formatFbrRateDateClient(dateStr) {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const d = dateStr ? new Date(dateStr) : new Date();
+  if (Number.isNaN(d.getTime())) {
+    const now = new Date();
+    return `${String(now.getDate()).padStart(2, '0')}-${months[now.getMonth()]}-${now.getFullYear()}`;
+  }
+  return `${String(d.getDate()).padStart(2, '0')}-${months[d.getMonth()]}-${d.getFullYear()}`;
+}
+
+function unwrapFbrList(data) {
+  if (Array.isArray(data)) return data;
+  if (data?.value && Array.isArray(data.value)) return data.value;
+  return [];
+}
+
+function getSellerProvinceCode() {
+  const province = appConfig.companySettings?.province;
+  if (!province || typeof normalizeProvinceForFbr !== 'function' || typeof FBR_PROVINCES === 'undefined') {
+    return null;
+  }
+  const official = normalizeProvinceForFbr(province);
+  return FBR_PROVINCES.find(p => p.official === official)?.code ?? null;
+}
+
+async function fetchRatesForSaleType(saleType) {
+  const transTypes = unwrapFbrList(await apiFetch('/api/trans-types'));
+  const target = String(saleType || '').trim().toLowerCase();
+  const match = transTypes.find(t => String(t.transactioN_DESC || '').trim().toLowerCase() === target);
+  if (!match?.transactioN_TYPE_ID) return [];
+
+  const provinceCode = getSellerProvinceCode();
+  if (!provinceCode) return [];
+
+  const invoiceDate = document.getElementById('invoiceDate')?.value || '';
+  const params = new URLSearchParams({
+    date: formatFbrRateDateClient(invoiceDate),
+    transTypeId: String(match.transactioN_TYPE_ID),
+    originationSupplier: String(provinceCode),
+  });
+  const raw = await apiFetch(`/api/rates?${params}`);
+  return unwrapFbrList(raw).map(r => ({
+    rateId:    r.ratE_ID,
+    rateDesc:  r.ratE_DESC,
+    rateValue: r.ratE_VALUE,
+  }));
+}
+
+function setRateWarning(row, show) {
+  const warn = row.querySelector('.rate-sale-type-warn');
+  if (warn) warn.hidden = !show;
+}
+
+async function refreshRatesForItemSaleType(row) {
+  const idx = row.id.replace('item-row-', '');
+  const saleEl = row.querySelector(`[name="saleType_${idx}"]`);
+  let rateEl = row.querySelector(`[name="rate_${idx}"]`);
+  if (!saleEl || !rateEl) return;
+
+  const saleType = saleEl.value.trim();
+  if (!saleType) return;
+
+  setRateWarning(row, false);
+
+  try {
+    const scenarioId = (typeof getActiveScenarioId === 'function' && getActiveScenarioId())
+      || appConfig.defaultScenarioId
+      || 'SN019';
+
+    let rates = [];
+
+    // Prefer scenario reference when its sale type matches the selected one
+    let ref = (typeof scenarioRefCache !== 'undefined') ? scenarioRefCache[scenarioId] : null;
+    if (!ref && typeof fetchScenarioReference === 'function' && appConfig.planetiveMode && activeEnv === 'sandbox') {
+      try {
+        ref = await fetchScenarioReference(scenarioId);
+      } catch (err) {
+        console.warn('Scenario reference for rates:', err.message);
+      }
+    }
+
+    const refSale = String(ref?.saleType || '').trim().toLowerCase();
+    if (ref?.rates?.length && refSale === saleType.toLowerCase()) {
+      rates = ref.rates;
+    } else {
+      rates = await fetchRatesForSaleType(saleType);
+    }
+
+    if (!rates.length) {
+      setRateWarning(row, true);
+      return;
+    }
+
+    const preferred = rateEl.value;
+    const chosen = (typeof resolveRateFromReference === 'function')
+      ? resolveRateFromReference(rates, preferred)
+      : (rates[0].rateDesc || preferred);
+
+    if (rateEl.tagName === 'SELECT') {
+      rateEl.innerHTML = (typeof buildRateSelectOptions === 'function')
+        ? buildRateSelectOptions(rates, chosen)
+        : rates.map(r => `<option value="${r.rateDesc}">${r.rateDesc}</option>`).join('');
+      rateEl.value = chosen;
+    } else if (typeof buildRateSelectOptions === 'function' && rates.length) {
+      const parent = rateEl.parentElement;
+      const select = document.createElement('select');
+      select.name = `rate_${idx}`;
+      select.innerHTML = buildRateSelectOptions(rates, chosen);
+      select.value = chosen;
+      parent.replaceChild(select, rateEl);
+      rateEl = select;
+      attachTaxListeners(row);
+    } else {
+      rateEl.value = chosen;
+    }
+
+    if (typeof applyFurtherTaxForRow === 'function') applyFurtherTaxForRow(row, { expandAdvanced: false });
+    recalcRowTax(row);
+  } catch (err) {
+    console.warn('Rate refresh failed:', err.message);
+    setRateWarning(row, true);
+  }
+}
+
+function bindSaleTypeRateLookup(row) {
+  const idx = row.id.replace('item-row-', '');
+  const saleEl = row.querySelector(`[name="saleType_${idx}"]`);
+  if (!saleEl) return;
+
+  if (saleEl._rateLookupHandler) {
+    saleEl.removeEventListener('change', saleEl._rateLookupHandler);
+  }
+  saleEl._rateLookupHandler = () => {
+    refreshRatesForItemSaleType(row);
+  };
+  saleEl.addEventListener('change', saleEl._rateLookupHandler);
+}
+
+// ── HS Code search modal ──────────────────────────────────────────────────────
+const HS_COMMON_SERVICES = [
+  { hsCode: '9983.0000', description: 'Other business services (Consulting)' },
+  { hsCode: '9835.0000', description: 'Management consulting services' },
+  { hsCode: '9831.0000', description: 'Research and development services' },
+  { hsCode: '9836.0000', description: 'Public relations services' },
+  { hsCode: '9833.0000', description: 'Accounting and auditing services' },
+  { hsCode: '9819.0000', description: 'Legal services' },
+];
+
+let hsSearchTargetIdx = null;
+let hsItemCodesCache = null;
+let hsSearchDebounceTimer = null;
+
+function unwrapItemCodes(data) {
+  if (Array.isArray(data)) return data;
+  if (data?.value && Array.isArray(data.value)) return data.value;
+  return [];
+}
+
+function normalizeHsRow(row) {
+  return {
+    hsCode:      String(row.hS_CODE || row.hsCode || row.HS_CODE || '').trim(),
+    description: String(row.description || row.Description || '').trim(),
+  };
+}
+
+async function loadHsItemCodes() {
+  if (hsItemCodesCache) return hsItemCodesCache;
+  const raw = await apiFetch('/api/itemcodes');
+  hsItemCodesCache = unwrapItemCodes(raw)
+    .map(normalizeHsRow)
+    .filter(r => r.hsCode);
+  return hsItemCodesCache;
+}
+
+function bindHsSearchButton(row) {
+  const btn = row.querySelector('.hs-search-btn');
+  if (!btn) return;
+  if (btn._hsSearchHandler) btn.removeEventListener('click', btn._hsSearchHandler);
+  btn._hsSearchHandler = e => {
+    e.preventDefault();
+    openHsSearchModal(btn.dataset.itemIdx);
+  };
+  btn.addEventListener('click', btn._hsSearchHandler);
+}
+
+function openHsSearchModal(itemIdx) {
+  hsSearchTargetIdx = itemIdx;
+  const overlay = document.getElementById('hs-search-overlay');
+  const input = document.getElementById('hs-search-input');
+  const results = document.getElementById('hs-search-results');
+  if (!overlay) return;
+
+  if (input) input.value = '';
+  if (results) results.innerHTML = '<p class="hs-result-loading">Type a keyword to search HS codes…</p>';
+  overlay.hidden = false;
+  setTimeout(() => input?.focus(), 50);
+}
+
+function closeHsSearchModal() {
+  const overlay = document.getElementById('hs-search-overlay');
+  if (overlay) overlay.hidden = true;
+  hsSearchTargetIdx = null;
+  if (hsSearchDebounceTimer) {
+    clearTimeout(hsSearchDebounceTimer);
+    hsSearchDebounceTimer = null;
+  }
+}
+
+function applyHsCodeToItem(hsCode) {
+  if (hsSearchTargetIdx == null || !hsCode) return;
+  const hsEl = document.querySelector(`[name="hsCode_${hsSearchTargetIdx}"]`);
+  if (!hsEl) return;
+  hsEl.value = hsCode;
+  hsEl.dispatchEvent(new Event('change', { bubbles: true }));
+  hsEl.dispatchEvent(new Event('input', { bubbles: true }));
+  closeHsSearchModal();
+}
+
+function renderHsSearchResults(rows) {
+  const results = document.getElementById('hs-search-results');
+  if (!results) return;
+
+  if (!rows.length) {
+    results.innerHTML = '<p class="hs-result-empty">No results found</p>';
+    return;
+  }
+
+  const visible = rows.slice(0, 50);
+  results.innerHTML = visible.map(r => `
+    <button type="button" class="hs-result-row" data-hs-code="${escapeHtml(r.hsCode)}">
+      <span class="hs-result-code">${escapeHtml(r.hsCode)}</span>
+      — ${escapeHtml(r.description || 'No description')}
+    </button>
+  `).join('');
+
+  results.querySelectorAll('.hs-result-row').forEach(btn => {
+    btn.addEventListener('click', () => applyHsCodeToItem(btn.dataset.hsCode));
+  });
+}
+
+async function runHsCodeSearch(keyword) {
+  const results = document.getElementById('hs-search-results');
+  const q = String(keyword || '').trim().toLowerCase();
+  if (!q) {
+    if (results) results.innerHTML = '<p class="hs-result-loading">Type a keyword to search HS codes…</p>';
+    return;
+  }
+
+  if (results) results.innerHTML = '<p class="hs-result-loading">Searching…</p>';
+
+  try {
+    const list = await loadHsItemCodes();
+    const matched = list.filter(r =>
+      r.hsCode.toLowerCase().includes(q) ||
+      r.description.toLowerCase().includes(q)
+    );
+    renderHsSearchResults(matched);
+  } catch (err) {
+    if (results) {
+      results.innerHTML = `<p class="hs-result-empty">Search failed: ${escapeHtml(err.message)}</p>`;
+    }
+  }
+}
+
+function setupHsCodeSearch() {
+  const chips = document.getElementById('hs-common-chips');
+  if (chips && !chips.dataset.ready) {
+    chips.innerHTML = HS_COMMON_SERVICES.map(s => `
+      <button type="button" class="hs-chip" data-hs-code="${s.hsCode}" title="${escapeHtml(s.description)}">
+        ${escapeHtml(s.hsCode)} · ${escapeHtml(s.description)}
+      </button>
+    `).join('');
+    chips.querySelectorAll('.hs-chip').forEach(btn => {
+      btn.addEventListener('click', () => applyHsCodeToItem(btn.dataset.hsCode));
+    });
+    chips.dataset.ready = '1';
+  }
+
+  document.getElementById('hs-search-close')?.addEventListener('click', closeHsSearchModal);
+
+  document.getElementById('hs-search-overlay')?.addEventListener('click', e => {
+    if (e.target.id === 'hs-search-overlay') closeHsSearchModal();
+  });
+
+  document.getElementById('hs-search-input')?.addEventListener('input', e => {
+    const value = e.target.value;
+    if (hsSearchDebounceTimer) clearTimeout(hsSearchDebounceTimer);
+    hsSearchDebounceTimer = setTimeout(() => runHsCodeSearch(value), 400);
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      const overlay = document.getElementById('hs-search-overlay');
+      if (overlay && !overlay.hidden) closeHsSearchModal();
+    }
   });
 }
 
@@ -529,25 +895,49 @@ function addItem() {
       <span class="item-card-num">Item #${idx}</span>
       <button type="button" class="btn btn-danger btn-sm" onclick="removeItem(${idx})" title="Remove item"><i data-lucide="x"></i></button>
     </div>
-    <div class="item-fields-grid">
-      ${buildItemField(idx, 'hsCode', 'HS Code', { required: true, placeholder: '0101.2100' })}
+    <div class="item-fields-grid item-fields-required">
+      <div class="item-field item-field-hs-code">
+        <label>${itemFieldLabel('HS Code', true)}</label>
+        <div class="hs-code-input-row">
+          <input type="text" name="hsCode_${idx}" placeholder="0101.2100" />
+          <button type="button" class="hs-search-btn" data-item-idx="${idx}" title="Find HS code">🔍 Find</button>
+        </div>
+      </div>
       ${buildItemField(idx, 'productDescription', 'Description', { required: true, placeholder: 'Product description', span: 3 })}
       ${buildItemField(idx, 'saleType', 'Sale Type', { required: true, select: saleTypeOptions, span: 2 })}
-      ${buildItemField(idx, 'rate', 'Rate', { required: true, placeholder: ratePlaceholder })}
+      ${buildItemField(idx, 'rate', 'Rate', {
+        required: true,
+        placeholder: ratePlaceholder,
+        afterHtml: '<span class="rate-sale-type-warn" hidden>Rate not found for this sale type</span>',
+      })}
       ${buildItemField(idx, 'uoM', 'UOM', { required: true, placeholder: 'Numbers, pieces, units', span: 2 })}
       ${buildItemField(idx, 'quantity', 'Qty', { required: true, type: 'number', step: '0.0001', value: '1' })}
-      ${buildItemField(idx, 'totalValues', 'Total Value', { type: 'number' })}
       ${buildItemField(idx, 'valueSalesExcludingST', 'Value Excl. ST', { required: true, type: 'number', placeholder: '1000.00' })}
-      ${buildItemField(idx, 'fixedNotifiedValueOrRetailPrice', 'Fixed/Notified Price', { type: 'number' })}
-      ${buildItemField(idx, 'salesTaxApplicable', 'ST Applicable', { required: true, type: 'number', readonly: true })}
-      ${buildItemField(idx, 'salesTaxWithheldAtSource', 'ST Withheld', { type: 'number' })}
-      ${buildItemField(idx, 'extraTax', 'Extra Tax', { type: 'number' })}
-      ${buildItemField(idx, 'furtherTax', 'Further Tax', { type: 'number' })}
-      ${buildItemField(idx, 'sroScheduleNo', 'SRO Schedule', { placeholder: 'SRO123' })}
-      ${buildItemField(idx, 'fedPayable', 'FED Payable', { type: 'number' })}
-      ${buildItemField(idx, 'discount', 'Discount', { type: 'number' })}
-      ${buildItemField(idx, 'sroItemSerialNo', 'SRO Item S/N', { placeholder: '', span: 2 })}
+      ${buildItemField(idx, 'salesTaxApplicable', 'ST Applicable', {
+        required: true,
+        type: 'number',
+        readonly: true,
+        readonlyTitle: 'Auto-calculated from value × rate',
+      })}
+      ${buildItemField(idx, 'totalValues', 'Total Value', {
+        type: 'number',
+        readonly: true,
+        readonlyTitle: 'Auto-calculated: Value Excl. ST + ST + Further Tax + FED − Discount',
+      })}
     </div>
+    <div class="item-fields-advanced" hidden>
+      <div class="item-fields-grid">
+        ${buildItemField(idx, 'fixedNotifiedValueOrRetailPrice', 'Fixed/Notified Price', { type: 'number' })}
+        ${buildItemField(idx, 'salesTaxWithheldAtSource', 'ST Withheld', { type: 'number' })}
+        ${buildItemField(idx, 'extraTax', 'Extra Tax', { type: 'number' })}
+        ${buildItemField(idx, 'furtherTax', 'Further Tax', { type: 'number', fieldClass: 'item-field-further-tax' })}
+        ${buildItemField(idx, 'sroScheduleNo', 'SRO Schedule', { placeholder: '' })}
+        ${buildItemField(idx, 'fedPayable', 'FED Payable', { type: 'number' })}
+        ${buildItemField(idx, 'discount', 'Discount', { type: 'number' })}
+        ${buildItemField(idx, 'sroItemSerialNo', 'SRO Item S/N', { placeholder: '', span: 2 })}
+      </div>
+    </div>
+    <button type="button" class="item-advanced-toggle" aria-expanded="false">＋ Show advanced fields</button>
   `;
   body.appendChild(card);
 
@@ -555,6 +945,11 @@ function addItem() {
   if (saleSel) saleSel.value = defaultSale;
 
   attachTaxListeners(card);
+  attachAdvancedToggle(card);
+  bindSaleTypeRateLookup(card);
+  bindHsSearchButton(card);
+  if (typeof applyFurtherTaxForRow === 'function') applyFurtherTaxForRow(card);
+  recalcRowTax(card);
   refreshLucideIcons(card);
 
   if (appConfig.planetiveMode && activeEnv === 'sandbox') {
@@ -563,6 +958,9 @@ function addItem() {
     if (cached) {
       applyReferenceToItemRow(card, cached, getClientScenarioPreset(scenarioId)?.itemDefaults || {});
       bindHsUomLookup(card, scenarioId);
+      bindSaleTypeRateLookup(card);
+      if (typeof applyFurtherTaxForRow === 'function') applyFurtherTaxForRow(card);
+      recalcRowTax(card);
     }
   }
 }
@@ -604,8 +1002,10 @@ function buildPayload() {
     const g   = name => tr.querySelector(`[name="${name}_${idx}"]`)?.value ?? '0';
     const n   = name => parseFloat(g(name)) || 0;
     const rate = textField('rate');
+    const sroScheduleNo = textField('sroScheduleNo');
+    const sroItemSerialNo = textField('sroItemSerialNo');
 
-    payload.items.push({
+    const item = {
       hsCode:                          textField('hsCode'),
       productDescription:              textField('productDescription'),
       saleType:                        textField('saleType') || defaultSaleType(),
@@ -625,11 +1025,14 @@ function buildPayload() {
       salesTaxWithheldAtSource:        n('salesTaxWithheldAtSource'),
       extraTax:                        n('extraTax'),
       furtherTax:                      n('furtherTax'),
-      sroScheduleNo:                   g('sroScheduleNo'),
       fedPayable:                      n('fedPayable'),
       discount:                        n('discount'),
-      sroItemSerialNo:                 g('sroItemSerialNo'),
-    });
+    };
+
+    if (sroScheduleNo && sroScheduleNo !== 'SRO123') item.sroScheduleNo = sroScheduleNo;
+    if (sroItemSerialNo) item.sroItemSerialNo = sroItemSerialNo;
+
+    payload.items.push(item);
   });
 
   return payload;
@@ -638,9 +1041,12 @@ function buildPayload() {
 function extractItemFromRow(idx) {
   const tr = document.getElementById(`item-row-${idx}`);
   if (!tr) return null;
+  const text = name => String(tr.querySelector(`[name="${name}_${idx}"]`)?.value ?? '').trim();
   const g = name => tr.querySelector(`[name="${name}_${idx}"]`)?.value ?? '0';
   const n = name => parseFloat(g(name)) || 0;
-  return {
+  const sroScheduleNo = text('sroScheduleNo');
+  const sroItemSerialNo = text('sroItemSerialNo');
+  const item = {
     hsCode:                          g('hsCode'),
     productDescription:              g('productDescription'),
     saleType:                        g('saleType') || defaultSaleType(),
@@ -654,11 +1060,12 @@ function extractItemFromRow(idx) {
     salesTaxWithheldAtSource:        n('salesTaxWithheldAtSource'),
     extraTax:                        n('extraTax'),
     furtherTax:                      n('furtherTax'),
-    sroScheduleNo:                   g('sroScheduleNo'),
     fedPayable:                      n('fedPayable'),
     discount:                        n('discount'),
-    sroItemSerialNo:                 g('sroItemSerialNo'),
   };
+  if (sroScheduleNo && sroScheduleNo !== 'SRO123') item.sroScheduleNo = sroScheduleNo;
+  if (sroItemSerialNo) item.sroItemSerialNo = sroItemSerialNo;
+  return item;
 }
 
 const LOCKED_FORM_IDS = [
@@ -890,10 +1297,13 @@ function loadInvoiceIntoForm(inv) {
     set('fedPayable', item.fedPayable);
     set('discount', item.discount);
     set('sroItemSerialNo', item.sroItemSerialNo);
-    recalcRowTax(document.getElementById(`item-row-${idx}`));
+    const row = document.getElementById(`item-row-${idx}`);
+    if (row && typeof applyFurtherTaxForRow === 'function') applyFurtherTaxForRow(row);
+    recalcRowTax(row);
   });
 
   if (!p.items?.length) addItem();
+  if (typeof syncFurtherTaxAllRows === 'function') syncFurtherTaxAllRows();
 
   switchToPanel('invoice');
 }
@@ -1271,12 +1681,15 @@ async function loadSample() {
     if (ref && typeof applyReferenceToItemRow === 'function') {
       applyReferenceToItemRow(row, ref, { hsCode, rate, uoM, saleType });
       if (typeof bindHsUomLookup === 'function') bindHsUomLookup(row, scenarioId);
+      bindSaleTypeRateLookup(row);
     }
+    if (typeof applyFurtherTaxForRow === 'function') applyFurtherTaxForRow(row);
     recalcRowTax(row);
     const rateEl = row.querySelector('[name="rate_1"]');
     const effectiveRate = rateEl?.value || rate;
     const tax = calculateSalesTax(1000, effectiveRate);
-    set('totalValues', String(1000 + tax));
+    const further = parseFloat(row.querySelector('[name="furtherTax_1"]')?.value) || 0;
+    set('totalValues', String(1000 + tax + further));
   }
 }
 
