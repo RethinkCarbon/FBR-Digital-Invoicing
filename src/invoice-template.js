@@ -34,19 +34,17 @@ function addDays(date, days) {
 function formatPkr(amount) {
   const v = parseFloat(amount);
   const n = Number.isFinite(v) ? v : 0;
-  const parts = Math.abs(n).toFixed(2).split('.');
-  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  const formatted = `${parts.join('.')}`;
-  return n < 0 ? `-PKR ${formatted}` : `PKR ${formatted}`;
+  const rounded = Math.ceil(n);
+  const formatted = Math.abs(rounded).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  return rounded < 0 ? `-PKR ${formatted}` : `PKR ${formatted}`;
 }
 
 function formatPlainAmount(amount) {
   const v = parseFloat(amount);
   const n = Number.isFinite(v) ? v : 0;
-  const parts = Math.abs(n).toFixed(2).split('.');
-  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  const formatted = `${parts.join('.')}`;
-  return n < 0 ? `-${formatted}` : formatted;
+  const rounded = Math.ceil(n);
+  const formatted = Math.abs(rounded).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  return rounded < 0 ? `-${formatted}` : formatted;
 }
 
 function lineAmounts(item) {

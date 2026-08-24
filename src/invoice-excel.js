@@ -6,6 +6,11 @@ const fs = require('fs');
 const path = require('path');
 const { parseInvoiceDate } = require('./invoice-template');
 
+function ceilAmount(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? Math.ceil(amount) : 0;
+}
+
 const TEMPLATE_PATHS = [
   path.join(__dirname, 'assets', 'invoice-template.xlsx'),
   path.join(__dirname, '..', 'Invoice Template.xlsx'),
@@ -63,9 +68,9 @@ async function generateInvoicesExcel(invoices) {
       invoice_date:        inv.invoice_date ?? '',
       buyer_name:          inv.buyer_name ?? '',
       buyer_ntn:           inv.buyer_ntn ?? '',
-      subtotal:            inv.subtotal != null ? Number(inv.subtotal) : '',
-      sales_tax:           inv.sales_tax != null ? Number(inv.sales_tax) : '',
-      total_amount:        inv.total_amount != null ? Number(inv.total_amount) : '',
+      subtotal:            inv.subtotal != null ? ceilAmount(inv.subtotal) : '',
+      sales_tax:           inv.sales_tax != null ? ceilAmount(inv.sales_tax) : '',
+      total_amount:        inv.total_amount != null ? ceilAmount(inv.total_amount) : '',
       scenario_id:         inv.scenario_id ?? '',
       error_message:       inv.error_message ?? '',
       created_at:          inv.created_at ? new Date(inv.created_at).toISOString() : '',
@@ -73,7 +78,7 @@ async function generateInvoicesExcel(invoices) {
   }
 
   ['subtotal', 'sales_tax', 'total_amount'].forEach(col => {
-    sheet.getColumn(col).numFmt = '#,##0.00';
+    sheet.getColumn(col).numFmt = '#,##0';
   });
 
   return workbook.xlsx.writeBuffer();
@@ -244,8 +249,8 @@ async function generateSingleInvoiceExcel(invoice) {
       const unitPrice = qty > 0 ? valueExcl / qty : valueExcl;
       sheetXml = setTextCell(sheetXml, `C${r}`, item.productDescription || '');
       sheetXml = setNumberCell(sheetXml, `F${r}`, qty);
-      sheetXml = setNumberCell(sheetXml, `G${r}`, unitPrice);
-      sheetXml = setNumberCell(sheetXml, `H${r}`, valueExcl);
+      sheetXml = setNumberCell(sheetXml, `G${r}`, ceilAmount(unitPrice));
+      sheetXml = setNumberCell(sheetXml, `H${r}`, ceilAmount(valueExcl));
     } else {
       sheetXml = setTextCell(sheetXml, `C${r}`, '');
       sheetXml = setNumberCell(sheetXml, `F${r}`, '');
@@ -254,18 +259,18 @@ async function generateSingleInvoiceExcel(invoice) {
     }
   }
 
-  sheetXml = setNumberCell(sheetXml, 'H30', subtotal);
+  sheetXml = setNumberCell(sheetXml, 'H30', ceilAmount(subtotal));
   sheetXml = setTextCell(sheetXml, 'E31', `Sales Tax Rate : ${salesTaxRateLabel}`);
   sheetXml = setTextCell(sheetXml, 'G31', 'Add:SALES TAX (US$)');
-  sheetXml = setNumberCell(sheetXml, 'H31', totalSalesTax);
+  sheetXml = setNumberCell(sheetXml, 'H31', ceilAmount(totalSalesTax));
   sheetXml = setTextCell(sheetXml, 'D32', bank.accountTitle);
-  sheetXml = setNumberCell(sheetXml, 'H32', totalDue);
+  sheetXml = setNumberCell(sheetXml, 'H32', ceilAmount(totalDue));
   sheetXml = setTextCell(sheetXml, 'D33', bank.bankName);
   sheetXml = setTextCell(sheetXml, 'E33', `WHT Rate : ${withholdingRate}%`);
   sheetXml = setTextCell(sheetXml, 'G33', 'Less: WHT TAX (US$)');
-  sheetXml = setNumberCell(sheetXml, 'H33', withholdingAmount);
+  sheetXml = setNumberCell(sheetXml, 'H33', ceilAmount(withholdingAmount));
   sheetXml = setTextCell(sheetXml, 'D34', bank.iban || '');
-  sheetXml = setNumberCell(sheetXml, 'H34', netPayable);
+  sheetXml = setNumberCell(sheetXml, 'H34', ceilAmount(netPayable));
 
   zip.file('xl/worksheets/sheet1.xml', sheetXml);
 
