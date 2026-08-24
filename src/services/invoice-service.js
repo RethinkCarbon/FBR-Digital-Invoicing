@@ -1,6 +1,7 @@
 'use strict';
 
 const supabase = require('../supabase');
+const { calculateWithholding } = require('./tax-calculator');
 const { WORKFLOW_STATUS, workflowToLegacy } = require('../constants/invoice-status');
 const {
   extractFbrStatus,
@@ -36,6 +37,12 @@ function extractMetaFromPayload(payload = {}) {
     furtherTax += parseFloat(item.furtherTax) || 0;
   }
 
+  const totalAmount = subtotal + salesTax + furtherTax;
+  const wht = calculateWithholding(
+    totalAmount,
+    payload.withholdingRate ?? payload.withholding_rate
+  );
+
   return {
     scenario_id:   payload.scenarioId ?? null,
     invoice_date:  payload.invoiceDate ?? null,
@@ -43,7 +50,10 @@ function extractMetaFromPayload(payload = {}) {
     buyer_ntn:     payload.buyerNTNCNIC ?? null,
     subtotal,
     sales_tax:     salesTax,
-    total_amount:  subtotal + salesTax + furtherTax,
+    total_amount:  totalAmount,
+    withholding_rate:   wht.withholdingRate,
+    withholding_amount: wht.withholdingAmount,
+    net_payable:        wht.netPayable,
     note_type:     noteTypeFromPayload(payload),
     note_reason:   payload.reason ?? null,
   };
@@ -444,6 +454,7 @@ async function listInvoices({
     .select(
       'id, internal_invoice_no, workflow_status, environment, action, fbr_invoice_number, ' +
       'buyer_name, buyer_ntn, invoice_date, scenario_id, subtotal, sales_tax, total_amount, ' +
+      'withholding_rate, withholding_amount, net_payable, ' +
       'error_message, retry_count, next_retry_at, last_attempt_at, fbr_status, item_statuses, created_at, updated_at',
       { count: 'exact' }
     )

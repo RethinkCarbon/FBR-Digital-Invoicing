@@ -230,6 +230,18 @@ async function fbrPost(url, body, { debug = false, environment = 'sandbox' } = {
   }
 }
 
+function stripNonFbrFields(payload) {
+  if (!payload || typeof payload !== 'object') return payload;
+  const {
+    withholdingRate,
+    withholding_rate,
+    withholdingAmount,
+    withholding_amount,
+    ...fbrPayload
+  } = payload;
+  return fbrPayload;
+}
+
 async function callFbr(environment, payload, mode, options = {}) {
   const sb  = environment === 'sandbox';
   const url = mode === 'submit'
@@ -251,9 +263,10 @@ async function callFbr(environment, payload, mode, options = {}) {
     return createMockFbrResponse(payload, config.scenario);
   }
 
+  const fbrPayload = stripNonFbrFields(payload);
   const debugFbrPayload = isFbrPayloadDebugEnabled();
   const debugValidate = mode === 'validate' && isFbrValidateDebugEnabled();
-  return fbrPost(url, payload, { debug: debugValidate || debugFbrPayload, environment });
+  return fbrPost(url, fbrPayload, { debug: debugValidate || debugFbrPayload, environment });
 }
 
 module.exports = {

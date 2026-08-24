@@ -8,10 +8,68 @@ function parseTaxRate(rateStr) {
   return parseFloat(match[1]) / 100;
 }
 
+function roundMoney(n) {
+  return Math.round((parseFloat(n) || 0) * 100) / 100;
+}
+
 function calculateSalesTax(valueExclST, rateStr) {
   const base = parseFloat(valueExclST) || 0;
   const tax  = base * parseTaxRate(rateStr);
-  return Math.round(tax * 100) / 100;
+  return roundMoney(tax);
+}
+
+function parseWithholdingRate(rate) {
+  const v = parseFloat(rate);
+  if (!Number.isFinite(v) || v < 0) return 0;
+  return v;
+}
+
+function calculateWithholding(grossTotal, ratePercent) {
+  const gross = roundMoney(grossTotal);
+  const rate  = parseWithholdingRate(ratePercent);
+  const amount = roundMoney(gross * (rate / 100));
+  return {
+    withholdingRate:   rate,
+    withholdingAmount: amount,
+    netPayable:        roundMoney(gross - amount),
+  };
+}
+
+function formatMoneyDisplay(n) {
+  return roundMoney(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function updateInvoiceTotals() {
+  const subtotalEl = document.getElementById('tot-subtotal');
+  if (!subtotalEl) return;
+
+  let subtotal = 0;
+  let salesTax = 0;
+  let furtherTax = 0;
+
+  document.querySelectorAll('#items-body .item-card, #items-body .item-row').forEach(row => {
+    const idx = row.id.replace(/^item-(?:card|row)-/, '');
+    const valueEl = row.querySelector(`[name="valueSalesExcludingST_${idx}"]`);
+    const taxEl   = row.querySelector(`[name="salesTaxApplicable_${idx}"]`);
+    const furtherEl = row.querySelector(`[name="furtherTax_${idx}"]`);
+    subtotal   += parseFloat(valueEl?.value) || 0;
+    salesTax   += parseFloat(taxEl?.value) || 0;
+    furtherTax += parseFloat(furtherEl?.value) || 0;
+  });
+
+  const gross = roundMoney(subtotal + salesTax + furtherTax);
+  const rate  = document.getElementById('withholdingRate')?.value;
+  const wht   = calculateWithholding(gross, rate);
+
+  subtotalEl.textContent = formatMoneyDisplay(subtotal);
+  const stEl = document.getElementById('tot-sales-tax');
+  const grossEl = document.getElementById('tot-gross');
+  const whtEl = document.getElementById('tot-wht');
+  const netEl = document.getElementById('tot-net');
+  if (stEl) stEl.textContent = formatMoneyDisplay(salesTax);
+  if (grossEl) grossEl.textContent = formatMoneyDisplay(gross);
+  if (whtEl) whtEl.textContent = formatMoneyDisplay(wht.withholdingAmount);
+  if (netEl) netEl.textContent = formatMoneyDisplay(wht.netPayable);
 }
 
 function calculateFurtherTax(valueExclST) {
@@ -108,4 +166,6 @@ function recalcRowTaxFromDom(row) {
   if (fedEl && saleEl && isFedInStModeSaleType(saleEl.value)) {
     fedEl.closest('.item-field')?.classList.toggle('fed-field-highlight', false);
   }
+
+  if (typeof updateInvoiceTotals === 'function') updateInvoiceTotals();
 }

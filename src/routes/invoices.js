@@ -17,6 +17,7 @@ const { generateInvoiceHTML } = require('../invoice-template');
 const { generateInvoicePDF }  = require('../invoice-pdf');
 const { generateInvoicesExcel, generateSingleInvoiceExcel } = require('../invoice-excel');
 const { buildFbrPayload, prepareFbrSubmission } = require('../services/payload-builder');
+const { getCompanySettings, DEMO_COMPANY_SETTINGS } = require('../services/company-settings-service');
 const { getCancellationLimit } = require('../services/cancellation-limit-service');
 const {
   getInvoiceEditPolicy,
@@ -304,6 +305,8 @@ function createInvoiceRouter({ fbrHandlers }) {
         responsePayload:   row.response_payload,
         qrCode:            row.qr_code,
         workflowStatus:    row.workflow_status,
+        withholding_rate:  row.withholding_rate ?? row.request_payload?.withholdingRate,
+        withholding_amount: row.withholding_amount,
       });
       res.type('html').send(html);
     } catch (err) {
@@ -338,6 +341,68 @@ function createInvoiceRouter({ fbrHandlers }) {
       res.send(Buffer.from(buffer));
     } catch (err) {
       res.status(500).json({ error: true, message: err.message });
+    }
+  });
+
+  // ── Template Preview (no invoice/form needed) ───────────────────────────
+  router.get('/template/preview', async (req, res) => {
+    try {
+      let company = null;
+      try {
+        company = await getCompanySettings();
+      } catch {
+        company = null;
+      }
+
+      if (!company) company = DEMO_COMPANY_SETTINGS;
+
+      const today = new Date().toISOString().slice(0, 10);
+
+      const requestPayload = {
+        invoiceDate: today,
+        sellerBusinessName: company.business_name,
+        sellerNTNCNIC:      company.ntn,
+        sellerSTRN:         company.strn ?? null,
+        sellerProvince:     company.province,
+        sellerAddress:      company.address,
+        sellerPhone:        company.phone ?? null,
+
+        buyerBusinessName: 'Customer (Demo) Pvt Ltd',
+        buyerProvince:     'PUNJAB',
+        buyerAddress:      'Street 12, Demo City',
+        buyerNTNCNIC:      '1234567-8',
+        buyerPhone:        '+92-300-0000000',
+
+        items: [
+          {
+            productDescription: 'Milestone Payment for Successful completion of Third Party Study (ESIA)',
+            quantity: 1,
+            valueSalesExcludingST: 1000,
+            salesTaxApplicable: 150,
+            rate: 15,
+            furtherTax: 0,
+          },
+        ],
+      };
+
+      const html = generateInvoiceHTML({
+        internalInvoiceNo: 'INV-0001',
+        invoiceNumber:     'IRN-DEMO-0001',
+        requestPayload,
+        qrCode: null,
+        withholding_rate: 15,
+        payment_terms: 'Advance',
+        payment_method: 'Bank Transfer',
+        bankDetails: {
+          accountTitle: company.business_name,
+          bankName: 'Habib Bank Limited',
+          iban: 'PK00-0000000000000000',
+        },
+      });
+
+      res.type('html').send(html);
+    } catch (err) {
+      res.status(500).type('html').send(`<h1>Template preview error: ${err.message}</h1>`);
     }
   });
 

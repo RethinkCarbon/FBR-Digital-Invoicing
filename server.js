@@ -95,6 +95,8 @@ app.get('/api/invoice/print/:id', async (req, res) => {
       requestPayload:    row.request_payload,
       qrCode:            row.qr_code,
       workflowStatus:    row.workflow_status,
+      withholding_rate:  row.withholding_rate ?? row.request_payload?.withholdingRate,
+      withholding_amount: row.withholding_amount,
     });
     res.type('html').send(html);
   } catch (err) {

@@ -11,7 +11,7 @@ const DEMO_COMPANY_SETTINGS = Object.freeze({
   province:      'CAPITAL TERRITORY',
   email:         'invoicing@planetive.org',
   phone:         '+92-42-35761234',
-  logo_url:      '/logo.jpeg',
+  logo_url:      '/logo.png',
 });
 
 function inferProvinceFromAddress(address = '') {

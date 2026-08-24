@@ -43,6 +43,18 @@ function exportInvoiceExcel(invoiceId) {
   window.location.href = `/api/invoices/${invoiceId}/excel`;
 }
 
+function bindTemplatePreviewButton() {
+  const btn = document.getElementById('template-preview-btn');
+  if (!btn || btn.dataset.bound === 'true') return;
+  btn.dataset.bound = 'true';
+
+  btn.addEventListener('click', () => {
+    window.open('/api/invoices/template/preview', '_blank', 'noopener,noreferrer');
+  });
+
+  refreshLucideIcons(btn);
+}
+
 function createExportDropdownHtml(invoiceId) {
   return `
     <div class="export-dropdown" data-invoice-id="${invoiceId}">
@@ -106,6 +118,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   addItem();
   setTodayDate();
   applyPlanetiveDefaults();
+  bindTemplatePreviewButton();
   refreshLucideIcons();
 });
 
@@ -435,6 +448,13 @@ function setupInvoiceForm() {
 
   document.getElementById('buyerRegistrationType')?.addEventListener('change', () => {
     if (typeof syncFurtherTaxAllRows === 'function') syncFurtherTaxAllRows();
+  });
+
+  document.getElementById('withholdingRate')?.addEventListener('input', () => {
+    if (typeof updateInvoiceTotals === 'function') updateInvoiceTotals();
+  });
+  document.getElementById('withholdingRate')?.addEventListener('change', () => {
+    if (typeof updateInvoiceTotals === 'function') updateInvoiceTotals();
   });
 
   setupHsCodeSearch();
@@ -969,6 +989,7 @@ function removeItem(idx) {
   const row = document.getElementById(`item-row-${idx}`);
   if (row) row.remove();
   if (getItemCards().length === 0) addItem();
+  if (typeof updateInvoiceTotals === 'function') updateInvoiceTotals();
 }
 
 // ── Build Invoice Payload ─────────────────────────────────────────────────────
@@ -986,6 +1007,7 @@ function buildPayload() {
     buyerRegistrationType: val('buyerRegistrationType'),
     invoiceRefNo:         val('invoiceRefNo'),
     reason:               val('noteReason'),
+    withholdingRate:      parseFloat(val('withholdingRate')) || 0,
     items: [],
   };
 
@@ -1071,7 +1093,7 @@ function extractItemFromRow(idx) {
 const LOCKED_FORM_IDS = [
   'invoiceType', 'invoiceDate', 'scenarioId', 'invoiceRefNo', 'noteReason',
   'clientSelect', 'buyerRegistrationType', 'buyerNTNCNIC', 'buyerBusinessName',
-  'buyerProvince', 'buyerAddress',
+  'buyerProvince', 'buyerAddress', 'withholdingRate',
 ];
 
 function setFormLocked(locked) {
@@ -1252,6 +1274,7 @@ function loadInvoiceIntoForm(inv) {
 
   document.getElementById('invoiceType').value = p.invoiceType || 'Sale Invoice';
   document.getElementById('invoiceDate').value = p.invoiceDate || '';
+  document.getElementById('withholdingRate').value = p.withholdingRate ?? p.withholding_rate ?? inv.withholding_rate ?? 0;
   document.getElementById('buyerNTNCNIC').value = p.buyerNTNCNIC || '';
   document.getElementById('buyerBusinessName').value = p.buyerBusinessName || '';
   document.getElementById('buyerAddress').value = p.buyerAddress || '';
@@ -1304,6 +1327,7 @@ function loadInvoiceIntoForm(inv) {
 
   if (!p.items?.length) addItem();
   if (typeof syncFurtherTaxAllRows === 'function') syncFurtherTaxAllRows();
+  if (typeof updateInvoiceTotals === 'function') updateInvoiceTotals();
 
   switchToPanel('invoice');
 }
@@ -1662,6 +1686,7 @@ async function loadSample() {
 
   const idx = '1';
   const set = (n, v) => { const el = document.querySelector(`[name="${n}_${idx}"]`); if (el) el.value = v; };
+  document.getElementById('withholdingRate').value = '15';
   set('productDescription', 'Consulting / software services');
   set('hsCode', hsCode);
   set('saleType', saleType);
@@ -1691,6 +1716,7 @@ async function loadSample() {
     const further = parseFloat(row.querySelector('[name="furtherTax_1"]')?.value) || 0;
     set('totalValues', String(1000 + tax + further));
   }
+  if (typeof updateInvoiceTotals === 'function') updateInvoiceTotals();
 }
 
 // ── Reference Data Panel ──────────────────────────────────────────────────────

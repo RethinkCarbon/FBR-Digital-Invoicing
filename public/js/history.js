@@ -330,7 +330,9 @@ async function viewInvoiceDetail(id) {
         <div><span class="detail-label">Buyer NTN</span>${p.buyerNTNCNIC || inv.buyer_ntn || '—'}</div>
         <div><span class="detail-label">Subtotal</span>${formatMoney(inv.subtotal)}</div>
         <div><span class="detail-label">Sales Tax</span>${formatMoney(inv.sales_tax)}</div>
-        <div><span class="detail-label">Total</span><strong>${formatMoney(inv.total_amount)}</strong></div>
+        <div><span class="detail-label">Total after ST</span>${formatMoney(inv.total_amount)}</div>
+        <div><span class="detail-label">WHT (${escapeHtml(String(inv.withholding_rate ?? p.withholdingRate ?? 0))}%)</span>${formatMoney(inv.withholding_amount)}</div>
+        <div><span class="detail-label">Net Payable</span><strong>${formatMoney(inv.net_payable)}</strong></div>
         <div><span class="detail-label">Created</span>${inv.created_at ? new Date(inv.created_at).toLocaleString() : '—'}</div>
       </div>
       ${renderNoteInfoBlock(inv, p)}

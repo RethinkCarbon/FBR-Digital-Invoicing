@@ -9,10 +9,32 @@ function parseTaxRate(rateStr) {
   return parseFloat(match[1]) / 100;
 }
 
+function roundMoney(n) {
+  return Math.round((parseFloat(n) || 0) * 100) / 100;
+}
+
 function calculateSalesTax(valueExclST, rateStr) {
   const base = parseFloat(valueExclST) || 0;
   const tax  = base * parseTaxRate(rateStr);
-  return Math.round(tax * 100) / 100;
+  return roundMoney(tax);
+}
+
+function parseWithholdingRate(rate) {
+  const v = parseFloat(rate);
+  if (!Number.isFinite(v) || v < 0) return 0;
+  return v;
+}
+
+/** WHT is applied on the amount after sales tax (gross total). */
+function calculateWithholding(grossTotal, ratePercent) {
+  const gross = roundMoney(grossTotal);
+  const rate  = parseWithholdingRate(ratePercent);
+  const amount = roundMoney(gross * (rate / 100));
+  return {
+    withholdingRate:   rate,
+    withholdingAmount: amount,
+    netPayable:        roundMoney(gross - amount),
+  };
 }
 
 function isFedInStModeSaleType(saleType) {
@@ -45,7 +67,10 @@ function enrichPayloadTax(payload) {
 module.exports = {
   FED_ST_SALE_TYPE,
   parseTaxRate,
+  roundMoney,
   calculateSalesTax,
+  parseWithholdingRate,
+  calculateWithholding,
   isFedInStModeSaleType,
   enrichItemTax,
   enrichPayloadTax,
