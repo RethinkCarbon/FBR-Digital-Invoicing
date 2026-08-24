@@ -44,19 +44,36 @@ function resolveEnv(req) {
   return h === 'sandbox' || h === 'production' ? h : DEFAULT_ENV;
 }
 
-function authHeader() {
-  if (!SANDBOX_TOKEN) throw new Error('FBR bearer token is not configured for sandbox');
-  return { Authorization: `Bearer ${SANDBOX_TOKEN}` };
+function authHeader(environment = DEFAULT_ENV) {
+  const token = environment === 'production' ? PRODUCTION_TOKEN : SANDBOX_TOKEN;
+  if (!token) throw new Error('FBR bearer token is not configured for ' + environment);
+  return { Authorization: `Bearer ${token}` };
 }
 
-async function fbrGet(url, params = {}) {
-  const res = await axios.get(url, { headers: authHeader(), params, timeout: 15000 });
+const FBR_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** FBR SroSchedule / SaleTypeToRate expect DD-Mon-YYYY, not YYYY-MM-DD. */
+function toFbrDate(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return raw;
+  if (/^\d{2}-[A-Za-z]{3}-\d{4}$/.test(raw)) return raw;
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    return `${iso[3]}-${FBR_MONTHS[Number(iso[2]) - 1]}-${iso[1]}`;
+  }
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return `${String(d.getDate()).padStart(2, '0')}-${FBR_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+}
+
+async function fbrGet(url, params = {}, environment = DEFAULT_ENV) {
+  const res = await axios.get(url, { headers: authHeader(environment), params, timeout: 15000 });
   return res.data;
 }
 
-async function fbrPost(url, body) {
+async function fbrPost(url, body, environment = DEFAULT_ENV) {
   const res = await axios.post(url, body, {
-    headers: { ...authHeader(), 'Content-Type': 'application/json' },
+    headers: { ...authHeader(environment), 'Content-Type': 'application/json' },
     timeout: 15000,
   });
   return res.data;
@@ -167,70 +184,78 @@ app.get('/api/config', async (req, res) => {
 // ── Reference APIs ───────────────────────────────────────────────────────────
 
 app.get('/api/provinces', async (req, res) => {
-  try { res.json(await fbrGet(FBR_URLS.PROVINCES)); }
+  try { res.json(await fbrGet(FBR_URLS.PROVINCES, {}, resolveEnv(req))); }
   catch (err) { handleError(res, err); }
 });
 
 app.get('/api/doctypes', async (req, res) => {
-  try { res.json(await fbrGet(FBR_URLS.DOC_TYPES)); }
+  try { res.json(await fbrGet(FBR_URLS.DOC_TYPES, {}, resolveEnv(req))); }
   catch (err) { handleError(res, err); }
 });
 
 app.get('/api/itemcodes', async (req, res) => {
-  try { res.json(await fbrGet(FBR_URLS.ITEM_CODES)); }
+  try { res.json(await fbrGet(FBR_URLS.ITEM_CODES, {}, resolveEnv(req))); }
   catch (err) { handleError(res, err); }
 });
 
 app.get('/api/sro-item-codes', async (req, res) => {
-  try { res.json(await fbrGet(FBR_URLS.SRO_ITEM_CODE)); }
+  try { res.json(await fbrGet(FBR_URLS.SRO_ITEM_CODE, {}, resolveEnv(req))); }
   catch (err) { handleError(res, err); }
 });
 
 app.get('/api/trans-types', async (req, res) => {
-  try { res.json(await fbrGet(FBR_URLS.TRANS_TYPES)); }
+  try { res.json(await fbrGet(FBR_URLS.TRANS_TYPES, {}, resolveEnv(req))); }
   catch (err) { handleError(res, err); }
 });
 
 app.get('/api/uom', async (req, res) => {
-  try { res.json(await fbrGet(FBR_URLS.UOM)); }
+  try { res.json(await fbrGet(FBR_URLS.UOM, {}, resolveEnv(req))); }
   catch (err) { handleError(res, err); }
 });
 
 app.get('/api/sro-schedule', async (req, res) => {
   try {
     const { rate_id, date, origination_supplier_csv } = req.query;
-    res.json(await fbrGet(FBR_URLS.SRO_SCHEDULE, { rate_id, date, origination_supplier_csv }));
+    res.json(await fbrGet(FBR_URLS.SRO_SCHEDULE, {
+      rate_id,
+      date: toFbrDate(date),
+      origination_supplier_csv,
+    }, resolveEnv(req)));
   } catch (err) { handleError(res, err); }
 });
 
 app.get('/api/rates', async (req, res) => {
   try {
     const { date, transTypeId, originationSupplier } = req.query;
-    res.json(await fbrGet(FBR_URLS.SALE_TYPE_TO_RATE, { date, transTypeId, originationSupplier }));
+    res.json(await fbrGet(FBR_URLS.SALE_TYPE_TO_RATE, {
+      date: toFbrDate(date),
+      transTypeId,
+      originationSupplier,
+    }, resolveEnv(req)));
   } catch (err) { handleError(res, err); }
 });
 
 app.get('/api/hs-uom', async (req, res) => {
   try {
     const { hs_code, annexure_id } = req.query;
-    res.json(await fbrGet(FBR_URLS.HS_UOM, { hs_code, annexure_id }));
+    res.json(await fbrGet(FBR_URLS.HS_UOM, { hs_code, annexure_id }, resolveEnv(req)));
   } catch (err) { handleError(res, err); }
 });
 
 app.get('/api/sro-item', async (req, res) => {
   try {
     const { date, sro_id } = req.query;
-    res.json(await fbrGet(FBR_URLS.SRO_ITEM, { date, sro_id }));
+    res.json(await fbrGet(FBR_URLS.SRO_ITEM, { date: toFbrDate(date), sro_id }, resolveEnv(req)));
   } catch (err) { handleError(res, err); }
 });
 
 app.post('/api/statl', async (req, res) => {
-  try { res.json(await fbrPost(FBR_URLS.STATL, req.body)); }
+  try { res.json(await fbrPost(FBR_URLS.STATL, req.body, resolveEnv(req))); }
   catch (err) { handleError(res, err); }
 });
 
 app.post('/api/reg-type', async (req, res) => {
-  try { res.json(await fbrPost(FBR_URLS.GET_REG_TYPE, req.body)); }
+  try { res.json(await fbrPost(FBR_URLS.GET_REG_TYPE, req.body, resolveEnv(req))); }
   catch (err) { handleError(res, err); }
 });
 

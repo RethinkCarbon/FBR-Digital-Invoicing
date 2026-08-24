@@ -28,7 +28,11 @@ function createScenariosRouter({ fbrGet }) {
         }
       }
 
-      const data = await getScenarioReferenceData(fbrGet, scenarioId, {
+      const envHeader = String(req.headers['x-fbr-env'] || '').toLowerCase();
+      const environment = envHeader === 'sandbox' || envHeader === 'production' ? envHeader : undefined;
+      const get = (url, params = {}) => fbrGet(url, params, environment);
+
+      const data = await getScenarioReferenceData(get, scenarioId, {
         sellerProvince,
         invoiceDate: req.query.invoiceDate || null,
       });
@@ -51,10 +55,13 @@ function createScenariosRouter({ fbrGet }) {
       if (!hsCode) {
         return res.status(400).json({ error: true, message: 'hs_code query parameter is required' });
       }
+      const envHeader = String(req.headers['x-fbr-env'] || '').toLowerCase();
+      const environment = envHeader === 'sandbox' || envHeader === 'production' ? envHeader : undefined;
+      const get = (url, params = {}) => fbrGet(url, params, environment);
       const annexureId = req.query.annexure_id ? Number(req.query.annexure_id) : null;
       const result = annexureId
-        ? await fetchHsUom(fbrGet, hsCode, [annexureId])
-        : await fetchHsUom(fbrGet, hsCode);
+        ? await fetchHsUom(get, hsCode, [annexureId])
+        : await fetchHsUom(get, hsCode);
       res.json(result);
     } catch (err) {
       console.error('[scenarios] hs-uom:', err.message);
