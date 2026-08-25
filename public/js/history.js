@@ -185,7 +185,7 @@ function formatRetryInfo(inv) {
 function formatMoney(n) {
   const v = parseFloat(n);
   return Number.isFinite(v)
-    ? Math.ceil(v).toLocaleString('en-PK', { maximumFractionDigits: 0 })
+    ? Math.round(v).toLocaleString('en-PK', { maximumFractionDigits: 0 })
     : '—';
 }
 

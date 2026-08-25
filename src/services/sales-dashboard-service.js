@@ -45,7 +45,7 @@ function submittedSalesQuery(environment) {
 }
 
 function roundMoney(n) {
-  return Math.round(n * 100) / 100;
+  return Math.round(parseFloat(n) || 0);
 }
 
 async function getSalesDashboard({ environment } = {}) {

@@ -95,7 +95,7 @@ function parseQrBuffer(dataUrl) {
 function formatPlainAmount(amount) {
   const v = parseFloat(amount);
   const n = Number.isFinite(v) ? v : 0;
-  const rounded = Math.ceil(n);
+  const rounded = Math.round(n);
   const formatted = Math.abs(rounded).toLocaleString('en-US', { maximumFractionDigits: 0 });
   return rounded < 0 ? `-${formatted}` : formatted;
 }

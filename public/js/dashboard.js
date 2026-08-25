@@ -19,7 +19,7 @@ function dashboardStatusBadgeClass(status) {
 function dashboardFormatMoney(n) {
   const v = parseFloat(n);
   if (!Number.isFinite(v)) return '—';
-  return Math.ceil(v).toLocaleString('en-PK', { maximumFractionDigits: 0 });
+  return Math.round(v).toLocaleString('en-PK', { maximumFractionDigits: 0 });
 }
 
 function dashboardFormatCount(count, noun = 'invoice') {

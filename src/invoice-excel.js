@@ -6,9 +6,15 @@ const fs = require('fs');
 const path = require('path');
 const { parseInvoiceDate } = require('./invoice-template');
 
-function ceilAmount(value) {
+function roundAmount(value) {
   const amount = Number(value);
-  return Number.isFinite(amount) ? Math.ceil(amount) : 0;
+  return Number.isFinite(amount) ? Math.round(amount) : 0;
+}
+
+function formatAmountDisplay(value) {
+  const rounded = roundAmount(value);
+  const formatted = Math.abs(rounded).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  return rounded < 0 ? `-${formatted}` : formatted;
 }
 
 const TEMPLATE_PATHS = [
@@ -68,9 +74,9 @@ async function generateInvoicesExcel(invoices) {
       invoice_date:        inv.invoice_date ?? '',
       buyer_name:          inv.buyer_name ?? '',
       buyer_ntn:           inv.buyer_ntn ?? '',
-      subtotal:            inv.subtotal != null ? ceilAmount(inv.subtotal) : '',
-      sales_tax:           inv.sales_tax != null ? ceilAmount(inv.sales_tax) : '',
-      total_amount:        inv.total_amount != null ? ceilAmount(inv.total_amount) : '',
+      subtotal:            inv.subtotal != null ? roundAmount(inv.subtotal) : '',
+      sales_tax:           inv.sales_tax != null ? roundAmount(inv.sales_tax) : '',
+      total_amount:        inv.total_amount != null ? roundAmount(inv.total_amount) : '',
       scenario_id:         inv.scenario_id ?? '',
       error_message:       inv.error_message ?? '',
       created_at:          inv.created_at ? new Date(inv.created_at).toISOString() : '',
@@ -212,10 +218,10 @@ async function generateSingleInvoiceExcel(invoice) {
   const withholdingRate = parseFloat(invoice.withholding_rate ?? payload.withholdingRate ?? 0) || 0;
   const withholdingAmount = invoice.withholding_amount != null
     ? Number(invoice.withholding_amount)
-    : Math.round(totalDue * (withholdingRate / 100) * 100) / 100;
+    : totalDue * (withholdingRate / 100);
   const netPayable = invoice.net_payable != null
     ? Number(invoice.net_payable)
-    : Math.round((totalDue - withholdingAmount) * 100) / 100;
+    : totalDue - withholdingAmount;
   const salesTaxRateLabel = firstTaxRateLabel(items, payload);
 
   const zip = await JSZip.loadAsync(fs.readFileSync(templatePath));
@@ -249,8 +255,8 @@ async function generateSingleInvoiceExcel(invoice) {
       const unitPrice = qty > 0 ? valueExcl / qty : valueExcl;
       sheetXml = setTextCell(sheetXml, `C${r}`, item.productDescription || '');
       sheetXml = setNumberCell(sheetXml, `F${r}`, qty);
-      sheetXml = setNumberCell(sheetXml, `G${r}`, ceilAmount(unitPrice));
-      sheetXml = setNumberCell(sheetXml, `H${r}`, ceilAmount(valueExcl));
+      sheetXml = setTextCell(sheetXml, `G${r}`, formatAmountDisplay(unitPrice));
+      sheetXml = setTextCell(sheetXml, `H${r}`, formatAmountDisplay(valueExcl));
     } else {
       sheetXml = setTextCell(sheetXml, `C${r}`, '');
       sheetXml = setNumberCell(sheetXml, `F${r}`, '');
@@ -259,18 +265,18 @@ async function generateSingleInvoiceExcel(invoice) {
     }
   }
 
-  sheetXml = setNumberCell(sheetXml, 'H30', ceilAmount(subtotal));
+  sheetXml = setTextCell(sheetXml, 'H30', formatAmountDisplay(subtotal));
   sheetXml = setTextCell(sheetXml, 'E31', `Sales Tax Rate : ${salesTaxRateLabel}`);
   sheetXml = setTextCell(sheetXml, 'G31', 'Add:SALES TAX (US$)');
-  sheetXml = setNumberCell(sheetXml, 'H31', ceilAmount(totalSalesTax));
+  sheetXml = setTextCell(sheetXml, 'H31', formatAmountDisplay(totalSalesTax));
   sheetXml = setTextCell(sheetXml, 'D32', bank.accountTitle);
-  sheetXml = setNumberCell(sheetXml, 'H32', ceilAmount(totalDue));
+  sheetXml = setTextCell(sheetXml, 'H32', formatAmountDisplay(totalDue));
   sheetXml = setTextCell(sheetXml, 'D33', bank.bankName);
   sheetXml = setTextCell(sheetXml, 'E33', `WHT Rate : ${withholdingRate}%`);
   sheetXml = setTextCell(sheetXml, 'G33', 'Less: WHT TAX (US$)');
-  sheetXml = setNumberCell(sheetXml, 'H33', ceilAmount(withholdingAmount));
+  sheetXml = setTextCell(sheetXml, 'H33', formatAmountDisplay(withholdingAmount));
   sheetXml = setTextCell(sheetXml, 'D34', bank.iban || '');
-  sheetXml = setNumberCell(sheetXml, 'H34', ceilAmount(netPayable));
+  sheetXml = setTextCell(sheetXml, 'H34', formatAmountDisplay(netPayable));
 
   zip.file('xl/worksheets/sheet1.xml', sheetXml);
 
