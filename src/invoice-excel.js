@@ -190,7 +190,12 @@ async function generateSingleInvoiceExcel(invoice) {
   const payload = invoice.request_payload || {};
   const items   = Array.isArray(payload.items) ? payload.items : [];
 
-  const invoiceNumber = invoice.internal_invoice_no || invoice.fbr_invoice_number || '';
+  const internalNumber = invoice.internal_invoice_no || '';
+  const fbrIrn = invoice.fbr_invoice_number
+    || invoice.response_payload?.invoiceNumber
+    || payload.invoiceNumber
+    || '';
+  const invoiceNumber = internalNumber || fbrIrn || '';
   const invoiceDate   = parseInvoiceDate(payload.invoiceDate || invoice.invoice_date);
 
   const sellerName    = payload.sellerBusinessName || 'Planetive (Private) Limited';
@@ -237,6 +242,8 @@ async function generateSingleInvoiceExcel(invoice) {
   const dateSerial = excelSerialDate(invoiceDate);
   sheetXml = dateSerial != null ? setNumberCell(sheetXml, 'H5', dateSerial) : setTextCell(sheetXml, 'H5', '');
   sheetXml = setTextCell(sheetXml, 'H7', invoiceNumber);
+  sheetXml = setTextCell(sheetXml, 'G8', fbrIrn ? 'FBR IRN' : '');
+  sheetXml = setTextCell(sheetXml, 'H8', fbrIrn);
   sheetXml = setTextCell(sheetXml, 'G10', `Method of Payment: ${paymentMethod}`);
 
   sheetXml = setTextCell(sheetXml, 'G15', buyerName);

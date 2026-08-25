@@ -1,7 +1,7 @@
 'use strict';
 
 const { getCompanySettings } = require('./company-settings-service');
-const { enrichPayloadTax, rateRequiresSroSchedule, normalizeScheduleCode } = require('./tax-calculator');
+const { enrichPayloadTax, rateRequiresSroSchedule, resolveSroScheduleForPayload, sroScheduleRequiredMessage } = require('./tax-calculator');
 const { getScenarioPreset, getDefaultScenarioId } = require('../constants/scenario-presets');
 const { isPlanetiveMode } = require('../constants/app-mode');
 const { validateAndResolveNote } = require('./note-validation-service');
@@ -10,18 +10,20 @@ const { requireValidFbrProvince } = require('../constants/provinces');
 function sanitizeItemForFbr(item, index) {
   const cleaned = { ...item };
 
-  const sro = String(cleaned.sroScheduleNo ?? '').trim();
-  const scheduleCode = normalizeScheduleCode(sro);
-  if (!scheduleCode || sro === 'SRO123') {
+  const scheduleNo = resolveSroScheduleForPayload(cleaned.sroScheduleNo);
+  if (!scheduleNo) {
     delete cleaned.sroScheduleNo;
   } else {
-    cleaned.sroScheduleNo = scheduleCode;
+    cleaned.sroScheduleNo = scheduleNo;
   }
 
-  if (rateRequiresSroSchedule(cleaned.rate) && !cleaned.sroScheduleNo) {
+  if (rateRequiresSroSchedule(cleaned.rate, cleaned.saleType) && !cleaned.sroScheduleNo) {
+    throw new Error(sroScheduleRequiredMessage(index + 1, cleaned.rate));
+  }
+
+  if (cleaned.sroScheduleNo && !String(cleaned.sroItemSerialNo || '').trim()) {
     throw new Error(
-      `Item ${index + 1}: valid SRO Schedule No. (e.g. S1000047) is required when rate is not 18% (FBR 0077). ` +
-      'Use Sale Type → Rate, then pick the auto-filled SRO schedule for that rate.'
+      `Item ${index + 1}: SRO Item S/N is required when SRO Schedule No. is set (FBR 0078).`
     );
   }
 

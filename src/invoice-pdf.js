@@ -146,12 +146,12 @@ function extractInvoiceData(invoice) {
   const payload = invoice.request_payload || {};
 
   const internalNo = invoice.internal_invoice_no || null;
-  const irn        = invoice.fbr_invoice_number
+  const fbrIrn     = invoice.fbr_invoice_number
     || invoice.response_payload?.invoiceNumber
     || payload.invoiceNumber
     || null;
 
-  const invoiceNumber = internalNo || irn || '—';
+  const invoiceNumber = internalNo || fbrIrn || '—';
   const invoiceDateRaw = payload.invoiceDate || invoice.invoice_date || null;
   const invoiceDate    = parseInvoiceDate(invoiceDateRaw);
   const dueDate        = invoiceDate ? addDays(invoiceDate, 30) : null;
@@ -200,6 +200,8 @@ function extractInvoiceData(invoice) {
   return {
     payload,
     invoiceNumber,
+    internalInvoiceNo: internalNo || '—',
+    fbrIrn: fbrIrn || '—',
     dateDisplay: formatDisplayDate(invoiceDate),
     sellerName:    payload.sellerBusinessName || '—',
     sellerNtn:     payload.sellerNTNCNIC || '—',
@@ -282,17 +284,18 @@ function drawMetaSection(doc, data, y, pageW) {
   };
 
   drawMetaLine('Date:', data.dateDisplay, 74);
-  drawMetaLine('Invoice No.', data.invoiceNumber, 96);
+  drawMetaLine('Invoice No.', data.internalInvoiceNo, 96);
+  drawMetaLine('FBR IRN', data.fbrIrn, 118);
 
   doc.fillColor(C.text).font('Helvetica-Bold').fontSize(8)
-    .text('Payment Terms', rightX + 36, 118, { width: 110, align: 'center' });
-  doc.text(`Method of Payment: ${data.paymentMethod === '—' ? data.paymentTerms : data.paymentMethod}`, rightX - 10, 130, {
+    .text('Payment Terms', rightX + 36, 140, { width: 110, align: 'center' });
+  doc.text(`Method of Payment: ${data.paymentMethod === '—' ? data.paymentTerms : data.paymentMethod}`, rightX - 10, 152, {
     width: pageW - MARGIN - rightX + 10,
     align: 'center',
   });
 
   const billX = pageW - 250;
-  let by = 168;
+  let by = 190;
   doc.fillColor(C.text).font('Helvetica-Bold').fontSize(8.5)
     .text('BILL TO', billX, by);
   by += 14;

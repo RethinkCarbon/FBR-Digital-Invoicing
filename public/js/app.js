@@ -661,6 +661,41 @@ function getRateIdFromRow(row) {
   }
 }
 
+async function ensureRateIdForRow(row) {
+  let rateId = getRateIdFromRow(row);
+  if (rateId) return rateId;
+
+  const idx = row.id.replace('item-row-', '');
+  const saleType = row.querySelector(`[name="saleType_${idx}"]`)?.value?.trim();
+  const rateValue = row.querySelector(`[name="rate_${idx}"]`)?.value?.trim();
+  if (!saleType || !rateValue) return null;
+
+  try {
+    const rates = await fetchRatesForSaleType(saleType);
+    row.dataset.rateOptions = JSON.stringify(rates);
+    const match = rates.find(r => r.rateDesc === rateValue)
+      || rates.find(r => String(r.rateDesc).includes(rateValue) || rateValue.includes(String(r.rateDesc)));
+    return match?.rateId ?? null;
+  } catch (err) {
+    console.warn('Rate ID lookup for SRO failed:', err.message);
+    return null;
+  }
+}
+
+function setSroStatus(row, message, isError = false) {
+  const field = row.querySelector('.item-field-sro-schedule');
+  if (!field) return;
+  let status = field.querySelector('.sro-lookup-status');
+  if (!status) {
+    status = document.createElement('div');
+    status.className = 'sro-lookup-status';
+    status.style.cssText = 'font-size:11px;margin-top:4px;line-height:1.3';
+    field.appendChild(status);
+  }
+  status.style.color = isError ? 'var(--error, #b91c1c)' : 'var(--gray-600, #64748b)';
+  status.textContent = message || '';
+}
+
 function setSroControl(row, fieldName, options, { placeholder = '— Select —', selected = '' } = {}) {
   const idx = row.id.replace('item-row-', '');
   const existing = row.querySelector(`[name="${fieldName}_${idx}"]`);
@@ -670,8 +705,10 @@ function setSroControl(row, fieldName, options, { placeholder = '— Select —'
   const select = document.createElement('select');
   select.name = `${fieldName}_${idx}`;
   select.innerHTML = `<option value="">${placeholder}</option>` + (options || []).map(opt => {
-    const sel = opt.value === selected ? ' selected' : '';
-    return `<option value="${opt.value}"${opt.sroId != null ? ` data-sro-id="${opt.sroId}"` : ''}${sel}>${opt.label}</option>`;
+    const sel = String(opt.value) === String(selected) ? ' selected' : '';
+    const title = opt.hint ? ` title="${opt.hint}"` : '';
+    const hint = opt.hint ? ` (${opt.hint})` : '';
+    return `<option value="${opt.value}"${opt.sroId != null ? ` data-sro-id="${opt.sroId}"` : ''}${title}${sel}>${opt.label}${hint}</option>`;
   }).join('');
   if (selected) select.value = selected;
   parent.replaceChild(select, existing);
@@ -690,10 +727,14 @@ async function refreshSroItemSerialForRow(row, sroId) {
     const current = row.querySelector(`[name="sroItemSerialNo_${idx}"]`)?.value || '';
     const options = items.map(item => {
       const serial = String(item.srO_ITEM_DESC ?? item.sroItemDesc ?? item.sro_item_desc ?? '').trim();
-      return serial ? { value: serial, label: serial } : null;
+      const id = item.srO_ITEM_ID ?? item.sroItemId ?? '';
+      return serial ? { value: serial, label: id ? `${serial} (id ${id})` : serial } : null;
     }).filter(Boolean);
 
-    if (!options.length) return;
+    if (!options.length) {
+      setSroStatus(row, `SRO schedule loaded (id ${sroId}). No item serials returned for this SRO.`);
+      return;
+    }
 
     const select = setSroControl(row, 'sroItemSerialNo', options, {
       placeholder: '— Select item S/N —',
@@ -703,12 +744,12 @@ async function refreshSroItemSerialForRow(row, sroId) {
       select.value = options[0].value;
     }
   } catch (err) {
-    console.warn('SRO item serial lookup:', err.message);
+    setSroStatus(row, `SRO item lookup failed: ${err.message}`, true);
   }
 }
 
 async function refreshSroFieldsForRow(row) {
-  if (!row || typeof rateRequiresSroSchedule !== 'function') return;
+  if (!row || typeof shouldLoadSroSchedules !== 'function') return;
 
   const idx = row.id.replace('item-row-', '');
   const rateEl = row.querySelector(`[name="rate_${idx}"]`);
@@ -716,18 +757,39 @@ async function refreshSroFieldsForRow(row) {
   if (!rateEl || !sroField) return;
 
   const rate = rateEl.value;
-  const required = rateRequiresSroSchedule(rate);
+  const saleType = row.querySelector(`[name="saleType_${idx}"]`)?.value || defaultSaleType();
+  const required = typeof rateRequiresSroSchedule === 'function'
+    ? rateRequiresSroSchedule(rate, saleType)
+    : false;
+  const shouldLoad = shouldLoadSroSchedules(rate);
   sroField.classList.toggle('item-field-required-sro', required);
 
-  if (!required) return;
+  if (!shouldLoad) {
+    setSroStatus(row, '');
+    return;
+  }
 
   expandItemAdvancedFields(row);
+  setSroStatus(row, 'Loading SRO schedules from FBR…');
 
-  const rateId = getRateIdFromRow(row);
   const provinceCode = getSellerProvinceCode();
   const invoiceDate = document.getElementById('invoiceDate')?.value;
-  if (!rateId || !provinceCode || !invoiceDate) {
-    console.warn('SRO lookup skipped: missing rate ID, seller province, or invoice date');
+  if (!invoiceDate) {
+    setSroStatus(row, 'Set the invoice date first, then SRO schedules can load.', true);
+    return;
+  }
+  if (!provinceCode) {
+    setSroStatus(row, 'Set seller province in Company Settings, then retry.', true);
+    return;
+  }
+
+  const rateId = await ensureRateIdForRow(row);
+  if (!rateId) {
+    setSroStatus(
+      row,
+      `Could not resolve FBR rate ID for "${rate}". Pick the rate from the Sale Type dropdown first.`,
+      true
+    );
     return;
   }
 
@@ -738,25 +800,38 @@ async function refreshSroFieldsForRow(row) {
       origination_supplier_csv: String(provinceCode),
     });
     const resolved = unwrapFbrList(await apiFetch(`/api/sro-schedule/resolved?${params}`))
-      .filter(opt => opt.scheduleNo);
+      .filter(opt => opt.scheduleDesc || opt.scheduleNo);
 
     if (!resolved.length) {
-      console.warn('No SRO schedule codes resolved for rate', rate, 'rate_id', rateId);
+      setSroStatus(
+        row,
+        `FBR returned no SRO schedules for rate "${rate}" (rate_id ${rateId}). Try another rate or check Reference → SRO Schedule.`,
+        true
+      );
       return;
     }
 
     const current = row.querySelector(`[name="sroScheduleNo_${idx}"]`)?.value || '';
-    const options = resolved.map(opt => ({
-      value: opt.scheduleNo,
-      label: `${opt.scheduleNo} — ${opt.label}`,
-      sroId: opt.sroId,
-    }));
+    const options = resolved.map(opt => {
+      const desc = String(opt.scheduleDesc || opt.description || '').trim();
+      const code = String(opt.scheduleNo || '').trim();
+      return {
+        value: desc,
+        label: desc || code || String(opt.sroId ?? '—'),
+        hint: code && desc ? code : '',
+        sroId: opt.sroId,
+      };
+    }).filter(opt => opt.value);
 
-    const preferred = normalizeScheduleCode(current) || options[0].value;
+    const preferred = resolveSroScheduleForPayload(current)
+      || options.find(o => o.value.toUpperCase() === String(current).toUpperCase())?.value
+      || options[0]?.value;
     const select = setSroControl(row, 'sroScheduleNo', options, {
       placeholder: '— Select SRO schedule —',
       selected: preferred,
     });
+
+    setSroStatus(row, `Loaded ${options.length} SRO schedule(s) for this rate.`);
 
     if (select) {
       const applySerial = () => {
@@ -769,7 +844,7 @@ async function refreshSroFieldsForRow(row) {
       applySerial();
     }
   } catch (err) {
-    console.warn('SRO schedule lookup:', err.message);
+    setSroStatus(row, `SRO schedule lookup failed: ${err.message}`, true);
   }
 }
 
@@ -779,19 +854,28 @@ function validateSroFieldsBeforeSubmit() {
   for (const row of getItemCards()) {
     const idx = row.id.replace('item-row-', '');
     const rate = row.querySelector(`[name="rate_${idx}"]`)?.value || '';
-    if (!rateRequiresSroSchedule(rate)) continue;
+    const saleType = row.querySelector(`[name="saleType_${idx}"]`)?.value || defaultSaleType();
+    if (!rateRequiresSroSchedule(rate, saleType)) continue;
 
-    const scheduleNo = normalizeScheduleCode(
+    const scheduleNo = resolveSroScheduleForPayload(
       row.querySelector(`[name="sroScheduleNo_${idx}"]`)?.value
     );
     if (!scheduleNo) {
+      alert(sroScheduleRequiredMessage(idx, rate));
+      expandItemAdvancedFields(row);
+      refreshSroFieldsForRow(row);
+      row.querySelector(`[name="sroScheduleNo_${idx}"]`)?.focus();
+      return false;
+    }
+
+    const serial = String(row.querySelector(`[name="sroItemSerialNo_${idx}"]`)?.value || '').trim();
+    if (!serial) {
       alert(
-        `Item #${idx}: SRO Schedule No. is required for rate "${rate}" (not 18%).\n\n` +
-        'Open advanced fields — the app will auto-fill valid codes (e.g. S1000047) from FBR. ' +
-        'Do not enter the SRO ID or description manually.'
+        `Item #${idx}: SRO Item S/N is required when an SRO schedule is selected (FBR 0078).\n\n` +
+        'Pick a value from the SRO Item S/N dropdown after the schedule loads.'
       );
       expandItemAdvancedFields(row);
-      row.querySelector(`[name="sroScheduleNo_${idx}"]`)?.focus();
+      row.querySelector(`[name="sroItemSerialNo_${idx}"]`)?.focus();
       return false;
     }
   }
@@ -1111,7 +1195,7 @@ function addItem() {
         ${buildItemField(idx, 'extraTax', 'Extra Tax', { type: 'number' })}
         ${buildItemField(idx, 'furtherTax', 'Further Tax', { type: 'number', fieldClass: 'item-field-further-tax' })}
         ${buildItemField(idx, 'sroScheduleNo', 'SRO Schedule No.', {
-          placeholder: 'Auto-filled for non-18% rates (e.g. S1000047)',
+          placeholder: 'Auto-filled when rate is not 18%',
           fieldClass: 'item-field-sro-schedule',
         })}
         ${buildItemField(idx, 'fedPayable', 'FED Payable', { type: 'number' })}
@@ -1218,10 +1302,10 @@ function buildPayload() {
     };
 
     if (sroScheduleNo && sroScheduleNo !== 'SRO123') {
-      const code = typeof normalizeScheduleCode === 'function'
-        ? normalizeScheduleCode(sroScheduleNo)
+      const schedule = typeof resolveSroScheduleForPayload === 'function'
+        ? resolveSroScheduleForPayload(sroScheduleNo)
         : sroScheduleNo;
-      if (code) item.sroScheduleNo = code;
+      if (schedule) item.sroScheduleNo = schedule;
     }
     if (sroItemSerialNo) item.sroItemSerialNo = sroItemSerialNo;
 
@@ -1257,10 +1341,10 @@ function extractItemFromRow(idx) {
     discount:                        n('discount'),
   };
   if (sroScheduleNo && sroScheduleNo !== 'SRO123') {
-    const code = typeof normalizeScheduleCode === 'function'
-      ? normalizeScheduleCode(sroScheduleNo)
+    const schedule = typeof resolveSroScheduleForPayload === 'function'
+      ? resolveSroScheduleForPayload(sroScheduleNo)
       : sroScheduleNo;
-    if (code) item.sroScheduleNo = code;
+    if (schedule) item.sroScheduleNo = schedule;
   }
   if (sroItemSerialNo) item.sroItemSerialNo = sroItemSerialNo;
   return item;

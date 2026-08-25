@@ -101,14 +101,14 @@ function bankDetailLines(data) {
 function generateInvoiceHTML(data) {
   const payload    = data.requestPayload || data.request_payload || {};
   const internalNo   = data.internalInvoiceNo || data.internal_invoice_no || null;
-  const irn          = data.invoiceNumber || data.fbr_invoice_number
+  const fbrIrn       = data.invoiceNumber || data.fbr_invoice_number
     || data.responsePayload?.invoiceNumber
     || data.response_payload?.invoiceNumber
     || null;
   const qrCode       = data.qrCode ?? data.qr_code ?? null;
   const items        = Array.isArray(payload.items) ? payload.items : [];
 
-  const invoiceNumber = internalNo || irn || '—';
+  const invoiceNumber = internalNo || fbrIrn || '—';
   const invoiceDateRaw = payload.invoiceDate || data.invoice_date || null;
   const invoiceDate    = parseInvoiceDate(invoiceDateRaw);
   const dueDate        = invoiceDate ? addDays(invoiceDate, 30) : null;
@@ -577,7 +577,8 @@ function generateInvoiceHTML(data) {
 
       <div class="header-right">
         <div class="meta-row"><span>Date:</span><span class="meta-line-fill">${escapeHtml(formatDisplayDate(invoiceDate))}</span></div>
-        <div class="meta-row"><span>Invoice No.</span><span class="meta-line-fill">${escapeHtml(invoiceNumber)}</span></div>
+        <div class="meta-row"><span>Invoice No.</span><span class="meta-line-fill">${escapeHtml(internalNo || '—')}</span></div>
+        <div class="meta-row"><span>FBR IRN</span><span class="meta-line-fill">${escapeHtml(fbrIrn || '—')}</span></div>
         <div class="meta-note">
           <div>Payment Terms</div>
           <div>Method of Payment: ${escapeHtml(paymentMethod === '—' ? paymentTerms : paymentMethod)}</div>

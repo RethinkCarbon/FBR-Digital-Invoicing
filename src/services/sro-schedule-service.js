@@ -1,6 +1,7 @@
 'use strict';
 
 const { FBR_URLS } = require('../constants');
+const { findScheduleCodeByDescription } = require('../constants/sro-schedule-codes');
 
 const FBR_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -23,9 +24,12 @@ function toFbrDate(value) {
   return `${String(d.getDate()).padStart(2, '0')}-${FBR_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
 }
 
+/** Invoice payload must use S1000xxx codes (not numeric srO_ID). */
 function normalizeScheduleCode(value) {
   const v = String(value ?? '').trim();
-  return /^S1000\d+$/i.test(v) ? v.toUpperCase() : '';
+  if (!v || v.toUpperCase() === 'SRO123') return '';
+  if (/^S1000\d+$/i.test(v)) return v.toUpperCase();
+  return '';
 }
 
 function scheduleDescription(row) {
@@ -40,61 +44,48 @@ function scheduleDescription(row) {
 
 function scheduleCodeFromRow(row) {
   if (!row || typeof row !== 'object') return '';
+
   for (const val of Object.values(row)) {
-    const code = normalizeScheduleCode(val);
-    if (code) return code;
-  }
-  return '';
-}
-
-function matchScheduleCode(scheduleRow, itemCodeRows) {
-  const direct = scheduleCodeFromRow(scheduleRow);
-  if (direct) return direct;
-
-  const desc = scheduleDescription(scheduleRow).toLowerCase();
-  if (!desc) return '';
-
-  for (const row of itemCodeRows) {
-    if (scheduleDescription(row).toLowerCase() === desc) {
-      const code = scheduleCodeFromRow(row);
-      if (code) return code;
-    }
+    const s = String(val ?? '').trim();
+    if (/^S1000\d+$/i.test(s)) return s.toUpperCase();
   }
 
-  for (const row of itemCodeRows) {
-    const d = scheduleDescription(row).toLowerCase();
-    if (d && (d.includes(desc) || desc.includes(d))) {
-      const code = scheduleCodeFromRow(row);
-      if (code) return code;
-    }
-  }
+  const description = scheduleDescription(row);
+  const mapped = findScheduleCodeByDescription(description);
+  if (mapped) return mapped;
 
   return '';
 }
 
 async function resolveSroSchedules(fbrGet, { rate_id, date, origination_supplier_csv }, environment) {
-  const [schedulesRaw, itemCodesRaw] = await Promise.all([
-    fbrGet(FBR_URLS.SRO_SCHEDULE, {
-      rate_id,
-      date: toFbrDate(date),
-      origination_supplier_csv,
-    }, environment),
-    fbrGet(FBR_URLS.SRO_ITEM_CODE, {}, environment),
-  ]);
+  const schedulesRaw = await fbrGet(FBR_URLS.SRO_SCHEDULE, {
+    rate_id,
+    date: toFbrDate(date),
+    origination_supplier_csv,
+  }, environment);
 
   const schedules = unwrapList(schedulesRaw);
-  const itemCodes = unwrapList(itemCodesRaw);
 
   return schedules.map(row => {
     const sroId = row.srO_ID ?? row.sroId ?? row.sro_id ?? null;
-    const scheduleNo = matchScheduleCode(row, itemCodes);
+    const description = scheduleDescription(row);
+    const scheduleNo = scheduleCodeFromRow(row);
+    const scheduleDesc = description || '';
     return {
       sroId,
       scheduleNo,
-      description: scheduleDescription(row),
-      label: scheduleDescription(row) || scheduleNo || String(sroId ?? ''),
+      scheduleDesc,
+      description,
+      label: scheduleNo
+        ? `${scheduleNo} — ${description || 'SRO schedule'}`
+        : (description || String(sroId || '')),
     };
-  }).filter(entry => entry.scheduleNo);
+  }).filter(entry => entry.scheduleDesc || entry.scheduleNo);
 }
 
-module.exports = { resolveSroSchedules, normalizeScheduleCode, scheduleCodeFromRow };
+module.exports = {
+  resolveSroSchedules,
+  normalizeScheduleCode,
+  scheduleCodeFromRow,
+  scheduleDescription,
+};
