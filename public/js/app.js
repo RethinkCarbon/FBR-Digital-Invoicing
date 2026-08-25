@@ -421,7 +421,11 @@ function setupInvoiceForm() {
 
   document.getElementById('invoiceDate')?.addEventListener('change', () => {
     invalidateScenarioRefCache();
+    sroItemCodesCache = null;
     onPlanetiveScenarioChanged();
+    getItemCards().forEach(row => {
+      if (typeof refreshSroFieldsForRow === 'function') refreshSroFieldsForRow(row);
+    });
   });
 
   document.getElementById('exit-edit-mode-btn')?.addEventListener('click', () => {
@@ -574,6 +578,9 @@ function attachTaxListeners(tr) {
       if (field === 'valueSalesExcludingST' && typeof applyFurtherTaxForRow === 'function') {
         applyFurtherTaxForRow(tr);
       }
+      if (field === 'rate' && typeof refreshSroFieldsForRow === 'function') {
+        refreshSroFieldsForRow(tr);
+      }
       recalcRowTax(tr);
     };
     el.addEventListener('input', el._taxHandler);
@@ -629,6 +636,168 @@ async function fetchRatesForSaleType(saleType) {
   }));
 }
 
+let sroItemCodesCache = null;
+
+async function loadSroItemCodes() {
+  if (sroItemCodesCache) return sroItemCodesCache;
+  sroItemCodesCache = unwrapFbrList(await apiFetch('/api/sro-item-codes'));
+  return sroItemCodesCache;
+}
+
+function getRateIdFromRow(row) {
+  const idx = row.id.replace('item-row-', '');
+  const rateEl = row.querySelector(`[name="rate_${idx}"]`);
+  if (!rateEl) return null;
+  const fromOption = rateEl.selectedOptions?.[0]?.dataset?.rateId;
+  if (fromOption) return fromOption;
+  const cached = row.dataset.rateOptions;
+  if (!cached) return null;
+  try {
+    const rates = JSON.parse(cached);
+    const match = rates.find(r => r.rateDesc === rateEl.value);
+    return match?.rateId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function setSroControl(row, fieldName, options, { placeholder = '— Select —', selected = '' } = {}) {
+  const idx = row.id.replace('item-row-', '');
+  const existing = row.querySelector(`[name="${fieldName}_${idx}"]`);
+  if (!existing) return null;
+
+  const parent = existing.parentElement;
+  const select = document.createElement('select');
+  select.name = `${fieldName}_${idx}`;
+  select.innerHTML = `<option value="">${placeholder}</option>` + (options || []).map(opt => {
+    const sel = opt.value === selected ? ' selected' : '';
+    return `<option value="${opt.value}"${opt.sroId != null ? ` data-sro-id="${opt.sroId}"` : ''}${sel}>${opt.label}</option>`;
+  }).join('');
+  if (selected) select.value = selected;
+  parent.replaceChild(select, existing);
+  return select;
+}
+
+async function refreshSroItemSerialForRow(row, sroId) {
+  if (!row || !sroId) return;
+  const idx = row.id.replace('item-row-', '');
+  const invoiceDate = document.getElementById('invoiceDate')?.value;
+  if (!invoiceDate) return;
+
+  try {
+    const params = new URLSearchParams({ date: invoiceDate, sro_id: String(sroId) });
+    const items = unwrapFbrList(await apiFetch(`/api/sro-item?${params}`));
+    const current = row.querySelector(`[name="sroItemSerialNo_${idx}"]`)?.value || '';
+    const options = items.map(item => {
+      const serial = String(item.srO_ITEM_DESC ?? item.sroItemDesc ?? item.sro_item_desc ?? '').trim();
+      return serial ? { value: serial, label: serial } : null;
+    }).filter(Boolean);
+
+    if (!options.length) return;
+
+    const select = setSroControl(row, 'sroItemSerialNo', options, {
+      placeholder: '— Select item S/N —',
+      selected: current,
+    });
+    if (select && !select.value && options.length === 1) {
+      select.value = options[0].value;
+    }
+  } catch (err) {
+    console.warn('SRO item serial lookup:', err.message);
+  }
+}
+
+async function refreshSroFieldsForRow(row) {
+  if (!row || typeof rateRequiresSroSchedule !== 'function') return;
+
+  const idx = row.id.replace('item-row-', '');
+  const rateEl = row.querySelector(`[name="rate_${idx}"]`);
+  const sroField = row.querySelector('.item-field-sro-schedule');
+  if (!rateEl || !sroField) return;
+
+  const rate = rateEl.value;
+  const required = rateRequiresSroSchedule(rate);
+  sroField.classList.toggle('item-field-required-sro', required);
+
+  if (!required) return;
+
+  expandItemAdvancedFields(row);
+
+  const rateId = getRateIdFromRow(row);
+  const provinceCode = getSellerProvinceCode();
+  const invoiceDate = document.getElementById('invoiceDate')?.value;
+  if (!rateId || !provinceCode || !invoiceDate) {
+    console.warn('SRO lookup skipped: missing rate ID, seller province, or invoice date');
+    return;
+  }
+
+  try {
+    const params = new URLSearchParams({
+      rate_id: String(rateId),
+      date: formatFbrRateDateClient(invoiceDate),
+      origination_supplier_csv: String(provinceCode),
+    });
+    const resolved = unwrapFbrList(await apiFetch(`/api/sro-schedule/resolved?${params}`))
+      .filter(opt => opt.scheduleNo);
+
+    if (!resolved.length) {
+      console.warn('No SRO schedule codes resolved for rate', rate, 'rate_id', rateId);
+      return;
+    }
+
+    const current = row.querySelector(`[name="sroScheduleNo_${idx}"]`)?.value || '';
+    const options = resolved.map(opt => ({
+      value: opt.scheduleNo,
+      label: `${opt.scheduleNo} — ${opt.label}`,
+      sroId: opt.sroId,
+    }));
+
+    const preferred = normalizeScheduleCode(current) || options[0].value;
+    const select = setSroControl(row, 'sroScheduleNo', options, {
+      placeholder: '— Select SRO schedule —',
+      selected: preferred,
+    });
+
+    if (select) {
+      const applySerial = () => {
+        const sroId = select.selectedOptions?.[0]?.dataset?.sroId;
+        if (sroId) refreshSroItemSerialForRow(row, sroId);
+      };
+      select.removeEventListener('change', select._sroSerialHandler);
+      select._sroSerialHandler = applySerial;
+      select.addEventListener('change', applySerial);
+      applySerial();
+    }
+  } catch (err) {
+    console.warn('SRO schedule lookup:', err.message);
+  }
+}
+
+function validateSroFieldsBeforeSubmit() {
+  if (typeof rateRequiresSroSchedule !== 'function') return true;
+
+  for (const row of getItemCards()) {
+    const idx = row.id.replace('item-row-', '');
+    const rate = row.querySelector(`[name="rate_${idx}"]`)?.value || '';
+    if (!rateRequiresSroSchedule(rate)) continue;
+
+    const scheduleNo = normalizeScheduleCode(
+      row.querySelector(`[name="sroScheduleNo_${idx}"]`)?.value
+    );
+    if (!scheduleNo) {
+      alert(
+        `Item #${idx}: SRO Schedule No. is required for rate "${rate}" (not 18%).\n\n` +
+        'Open advanced fields — the app will auto-fill valid codes (e.g. S1000047) from FBR. ' +
+        'Do not enter the SRO ID or description manually.'
+      );
+      expandItemAdvancedFields(row);
+      row.querySelector(`[name="sroScheduleNo_${idx}"]`)?.focus();
+      return false;
+    }
+  }
+  return true;
+}
+
 function setRateWarning(row, show) {
   const warn = row.querySelector('.rate-sale-type-warn');
   if (warn) warn.hidden = !show;
@@ -674,6 +843,8 @@ async function refreshRatesForItemSaleType(row) {
       return;
     }
 
+    row.dataset.rateOptions = JSON.stringify(rates);
+
     const preferred = rateEl.value;
     const chosen = (typeof resolveRateFromReference === 'function')
       ? resolveRateFromReference(rates, preferred)
@@ -699,6 +870,7 @@ async function refreshRatesForItemSaleType(row) {
 
     if (typeof applyFurtherTaxForRow === 'function') applyFurtherTaxForRow(row, { expandAdvanced: false });
     recalcRowTax(row);
+    if (typeof refreshSroFieldsForRow === 'function') refreshSroFieldsForRow(row);
   } catch (err) {
     console.warn('Rate refresh failed:', err.message);
     setRateWarning(row, true);
@@ -938,10 +1110,17 @@ function addItem() {
         ${buildItemField(idx, 'salesTaxWithheldAtSource', 'ST Withheld', { type: 'number' })}
         ${buildItemField(idx, 'extraTax', 'Extra Tax', { type: 'number' })}
         ${buildItemField(idx, 'furtherTax', 'Further Tax', { type: 'number', fieldClass: 'item-field-further-tax' })}
-        ${buildItemField(idx, 'sroScheduleNo', 'SRO Schedule', { placeholder: '' })}
+        ${buildItemField(idx, 'sroScheduleNo', 'SRO Schedule No.', {
+          placeholder: 'Auto-filled for non-18% rates (e.g. S1000047)',
+          fieldClass: 'item-field-sro-schedule',
+        })}
         ${buildItemField(idx, 'fedPayable', 'FED Payable', { type: 'number' })}
         ${buildItemField(idx, 'discount', 'Discount', { type: 'number' })}
-        ${buildItemField(idx, 'sroItemSerialNo', 'SRO Item S/N', { placeholder: '', span: 2 })}
+        ${buildItemField(idx, 'sroItemSerialNo', 'SRO Item S/N', {
+          placeholder: 'From SRO Item lookup',
+          span: 2,
+          fieldClass: 'item-field-sro-item',
+        })}
       </div>
     </div>
     <button type="button" class="item-advanced-toggle" aria-expanded="false">＋ Show advanced fields</button>
@@ -1038,7 +1217,12 @@ function buildPayload() {
       discount:                        n('discount'),
     };
 
-    if (sroScheduleNo && sroScheduleNo !== 'SRO123') item.sroScheduleNo = sroScheduleNo;
+    if (sroScheduleNo && sroScheduleNo !== 'SRO123') {
+      const code = typeof normalizeScheduleCode === 'function'
+        ? normalizeScheduleCode(sroScheduleNo)
+        : sroScheduleNo;
+      if (code) item.sroScheduleNo = code;
+    }
     if (sroItemSerialNo) item.sroItemSerialNo = sroItemSerialNo;
 
     payload.items.push(item);
@@ -1072,7 +1256,12 @@ function extractItemFromRow(idx) {
     fedPayable:                      n('fedPayable'),
     discount:                        n('discount'),
   };
-  if (sroScheduleNo && sroScheduleNo !== 'SRO123') item.sroScheduleNo = sroScheduleNo;
+  if (sroScheduleNo && sroScheduleNo !== 'SRO123') {
+    const code = typeof normalizeScheduleCode === 'function'
+      ? normalizeScheduleCode(sroScheduleNo)
+      : sroScheduleNo;
+    if (code) item.sroScheduleNo = code;
+  }
   if (sroItemSerialNo) item.sroItemSerialNo = sroItemSerialNo;
   return item;
 }
@@ -1310,6 +1499,7 @@ function loadInvoiceIntoForm(inv) {
     const row = document.getElementById(`item-row-${idx}`);
     if (row && typeof applyFurtherTaxForRow === 'function') applyFurtherTaxForRow(row);
     recalcRowTax(row);
+    if (row && typeof refreshSroFieldsForRow === 'function') refreshSroFieldsForRow(row);
   });
 
   if (!p.items?.length) addItem();
@@ -1361,6 +1551,7 @@ async function pollInvoiceUntilDone(id, action) {
 
 async function submitInvoice(action) {
   if (!validateNoteFields()) return;
+  if (!validateSroFieldsBeforeSubmit()) return;
 
   if (action === 'post' && activeEnv === 'sandbox') {
     const scenarioId = document.getElementById('scenarioId')?.value || appConfig.defaultScenarioId;

@@ -1,7 +1,7 @@
 'use strict';
 
 const { getCompanySettings } = require('./company-settings-service');
-const { enrichPayloadTax } = require('./tax-calculator');
+const { enrichPayloadTax, rateRequiresSroSchedule, normalizeScheduleCode } = require('./tax-calculator');
 const { getScenarioPreset, getDefaultScenarioId } = require('../constants/scenario-presets');
 const { isPlanetiveMode } = require('../constants/app-mode');
 const { validateAndResolveNote } = require('./note-validation-service');
@@ -11,10 +11,18 @@ function sanitizeItemForFbr(item, index) {
   const cleaned = { ...item };
 
   const sro = String(cleaned.sroScheduleNo ?? '').trim();
-  if (!sro || sro === 'SRO123') {
+  const scheduleCode = normalizeScheduleCode(sro);
+  if (!scheduleCode || sro === 'SRO123') {
     delete cleaned.sroScheduleNo;
   } else {
-    cleaned.sroScheduleNo = sro;
+    cleaned.sroScheduleNo = scheduleCode;
+  }
+
+  if (rateRequiresSroSchedule(cleaned.rate) && !cleaned.sroScheduleNo) {
+    throw new Error(
+      `Item ${index + 1}: valid SRO Schedule No. (e.g. S1000047) is required when rate is not 18% (FBR 0077). ` +
+      'Use Sale Type → Rate, then pick the auto-filled SRO schedule for that rate.'
+    );
   }
 
   const sroItem = String(cleaned.sroItemSerialNo ?? '').trim();

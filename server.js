@@ -240,6 +240,25 @@ app.get('/api/sro-schedule', async (req, res) => {
   } catch (err) { handleError(res, err); }
 });
 
+app.get('/api/sro-schedule/resolved', async (req, res) => {
+  try {
+    const { rate_id, date, origination_supplier_csv } = req.query;
+    if (!rate_id || !date || !origination_supplier_csv) {
+      return res.status(400).json({
+        error: true,
+        message: 'rate_id, date, and origination_supplier_csv are required',
+      });
+    }
+    const { resolveSroSchedules } = require('./src/services/sro-schedule-service');
+    const options = await resolveSroSchedules(fbrGet, {
+      rate_id,
+      date,
+      origination_supplier_csv,
+    }, resolveEnv(req));
+    res.json(options);
+  } catch (err) { handleError(res, err); }
+});
+
 app.get('/api/rates', async (req, res) => {
   try {
     const { date, transTypeId, originationSupplier } = req.query;

@@ -40,7 +40,8 @@ function buildRateSelectOptions(rates, selected) {
   const opts = list.map(r => {
     const val = r.rateDesc;
     const sel = val === selected ? ' selected' : '';
-    return `<option value="${val}"${sel}>${val}</option>`;
+    const rateId = r.rateId ?? r.ratE_ID ?? '';
+    return `<option value="${val}" data-rate-id="${rateId}"${sel}>${val}</option>`;
   });
 
   if (!hasSelected) {

@@ -9,6 +9,19 @@ function parseTaxRate(rateStr) {
   return parseFloat(match[1]) / 100;
 }
 
+/** FBR 0077 — SRO Schedule mandatory when line rate is not exactly 18%. */
+function rateRequiresSroSchedule(rateStr) {
+  const match = String(rateStr || '').match(/([\d.]+)/);
+  if (!match) return false;
+  const pct = parseFloat(match[1]);
+  return !Number.isFinite(pct) || Math.abs(pct - 18) > 0.001;
+}
+
+function normalizeScheduleCode(value) {
+  const v = String(value ?? '').trim();
+  return /^S1000\d+$/i.test(v) ? v.toUpperCase() : '';
+}
+
 function roundMoney(n) {
   return Math.round((parseFloat(n) || 0) * 100) / 100;
 }
@@ -67,6 +80,8 @@ function enrichPayloadTax(payload) {
 module.exports = {
   FED_ST_SALE_TYPE,
   parseTaxRate,
+  rateRequiresSroSchedule,
+  normalizeScheduleCode,
   roundMoney,
   calculateSalesTax,
   parseWithholdingRate,
