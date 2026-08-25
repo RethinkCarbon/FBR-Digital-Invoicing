@@ -1736,8 +1736,13 @@ async function loadRefData(key, btn) {
       params.set('hs_code', document.getElementById('p-hs-code').value);
       params.set('annexure_id', document.getElementById('p-annexure-id').value);
     } else if (key === 'sro-item') {
-      params.set('date', document.getElementById('p-sro-item-date').value);
-      params.set('sro_id', document.getElementById('p-sro-id').value);
+      const sroDate = document.getElementById('p-sro-item-date').value;
+      const sroId = document.getElementById('p-sro-id').value.trim();
+      if (!sroDate || !sroId) {
+        throw new Error('Date and SRO ID are required (e.g. date today, SRO ID 389).');
+      }
+      params.set('date', sroDate);
+      params.set('sro_id', sroId);
     }
 
     if ([...params].length) url += '?' + params.toString();

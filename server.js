@@ -66,6 +66,22 @@ function toFbrDate(value) {
   return `${String(d.getDate()).padStart(2, '0')}-${FBR_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
 }
 
+/** FBR SROItem (v2) expects YYYY-MM-DD (see DI API docs sample: date=2025-03-25). */
+function toIsoDate(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const fbr = raw.match(/^(\d{2})-([A-Za-z]{3})-(\d{4})$/);
+  if (fbr) {
+    const month = FBR_MONTHS.findIndex(m => m.toLowerCase() === fbr[2].toLowerCase());
+    if (month >= 0) return `${fbr[3]}-${String(month + 1).padStart(2, '0')}-${fbr[1]}`;
+  }
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 async function fbrGet(url, params = {}, environment = DEFAULT_ENV) {
   const res = await axios.get(url, { headers: authHeader(environment), params, timeout: 15000 });
   return res.data;
@@ -245,7 +261,16 @@ app.get('/api/hs-uom', async (req, res) => {
 app.get('/api/sro-item', async (req, res) => {
   try {
     const { date, sro_id } = req.query;
-    res.json(await fbrGet(FBR_URLS.SRO_ITEM, { date: toFbrDate(date), sro_id }, resolveEnv(req)));
+    // FBR SROItem (v2) expects ISO YYYY-MM-DD — unlike SroSchedule / SaleTypeToRate.
+    // Passing DD-Mon-YYYY causes FBR to return HTTP 500.
+    const isoDate = toIsoDate(date);
+    if (!isoDate || !sro_id) {
+      return res.status(400).json({
+        error: true,
+        message: 'date (YYYY-MM-DD) and sro_id are required',
+      });
+    }
+    res.json(await fbrGet(FBR_URLS.SRO_ITEM, { date: isoDate, sro_id }, resolveEnv(req)));
   } catch (err) { handleError(res, err); }
 });
 

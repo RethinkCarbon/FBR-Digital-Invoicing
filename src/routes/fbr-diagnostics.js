@@ -138,7 +138,7 @@ const FBR_ENDPOINT_INVENTORY = Object.freeze([
     category:        'reference',
     exposesScenarios: false,
     probe:           false,
-    notes:           'Requires date and sro_id query params.',
+    notes:           'Requires date (YYYY-MM-DD) and sro_id query params.',
   },
   {
     id:              'statl',
