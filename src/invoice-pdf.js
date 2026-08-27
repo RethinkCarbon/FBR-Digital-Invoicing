@@ -7,6 +7,8 @@ const {
   formatPkr,
   formatDisplayDate,
   parseInvoiceDate,
+  formatRate,
+  resolveWithholding,
 } = require('./invoice-template');
 const { qrDataUrlToBuffer } = require('./qrcode');
 
@@ -31,7 +33,7 @@ const BOTTOM_H   = 28;
 
 const TABLE_HEADER_H   = 18;
 const TABLE_DATA_ROW_H = 38;
-const TOTALS_BLOCK_H   = 104;
+const TOTALS_BLOCK_H   = 96;
 const FOOTER_BLOCK_H   = 110;
 
 const TABLE_COLS = [
@@ -98,13 +100,6 @@ function formatPlainAmount(amount) {
   const rounded = Math.round(n);
   const formatted = Math.abs(rounded).toLocaleString('en-US', { maximumFractionDigits: 0 });
   return rounded < 0 ? `-${formatted}` : formatted;
-}
-
-function formatRate(rate) {
-  const v = parseFloat(rate);
-  if (!Number.isFinite(v)) return '—';
-  const isInt = Math.abs(v - Math.round(v)) < 1e-9;
-  return isInt ? String(Math.round(v)) : String(v);
 }
 
 function lineAmounts(item) {
@@ -176,13 +171,6 @@ function extractInvoiceData(invoice) {
   });
 
   const furtherTax = items.reduce((s, it) => s + (parseFloat(it.furtherTax) || 0), 0);
-  const withholdingRate = parseFloat(
-    invoice.withholding_rate
-    ?? invoice.wht_rate
-    ?? payload.withholdingRate
-    ?? payload.withholding_rate
-    ?? 0
-  ) || 0;
 
   // Apply saved invoice overrides before computing totals
   if (invoice.subtotal != null) subtotal = parseFloat(invoice.subtotal) || subtotal;
@@ -192,10 +180,11 @@ function extractInvoiceData(invoice) {
     ? parseFloat(invoice.total_amount)
     : subtotal + salesTax + furtherTax;
 
-  // Screenshot WHT is calculated on TOTAL (including sales tax).
-  const withholdingAmount = invoice.withholding_amount != null
-    ? parseFloat(invoice.withholding_amount) || 0
-    : totalDue * (withholdingRate / 100);
+  const { withholdingRate, withholdingAmount, netPayable } = resolveWithholding(
+    invoice,
+    payload,
+    totalDue
+  );
 
   return {
     payload,
@@ -218,10 +207,10 @@ function extractInvoiceData(invoice) {
     totalDue,
     withholdingRate,
     withholdingAmount,
-    netPayable: totalDue - withholdingAmount,
+    netPayable,
     salesTaxRateLabel: firstTaxRate(items, payload),
-    paymentTerms: invoice.payment_terms || invoice.paymentTerms || '—',
-    paymentMethod: invoice.payment_method || invoice.paymentMethod || '—',
+    paymentTerms: invoice.payment_terms || invoice.paymentTerms || payload.payment_terms || payload.paymentTerms || '—',
+    paymentMethod: invoice.payment_method || invoice.paymentMethod || payload.payment_method || payload.paymentMethod || '—',
     sellerLines: compactAddressLines(buildSellerAddress(payload)),
     qrBuffer: parseQrBuffer(invoice.qr_code),
   };
@@ -234,8 +223,8 @@ function drawHeader(doc, pageW) {
     doc.image(LOGO_PATH, MARGIN - 4, 28, { width: 92 });
   }
 
-  doc.fillColor(C.text).font('Helvetica-Bold').fontSize(16)
-    .text('PERFORMA SALES TAX INVOICE', 0, 28, { width: pageW, align: 'center' });
+  doc.fillColor(C.text).font('Helvetica-Bold').fontSize(20)
+    .text('Invoice', 0, 28, { width: pageW, align: 'center' });
   return HEADER_H;
 }
 
@@ -364,29 +353,27 @@ function drawTableRow(doc, row, y, colXs, rowH, tw) {
 }
 
 function drawTotals(doc, data, y, pageW) {
-  const labelX = pageW - 255;
+  const labelX = pageW - 310;
   const valueX = pageW - 78;
   const lineH = 16;
   const rows = [
     ['SUBTOTAL (US$)', formatPlainAmount(data.subtotal)],
-    [`Sales Tax Rate: ${data.salesTaxRateLabel} add-SALES TAX (US$)`, formatPlainAmount(data.salesTax)],
+    [`Sales Tax Rate : ${data.salesTaxRateLabel}  Add: SALES TAX (US$)`, formatPlainAmount(data.salesTax)],
     ['TOTAL (US$)', formatPlainAmount(data.totalDue)],
-    [`WHT Rate : ${formatRate(data.withholdingRate)}%`, ''],
-    ['Less- WHT TAX (US$)', formatPlainAmount(data.withholdingAmount)],
+    [`WHT Rate : ${formatRate(data.withholdingRate)}%  Less: WHT TAX (US$)`, formatPlainAmount(data.withholdingAmount)],
     ['NET PAYABLE (US$)', formatPlainAmount(data.netPayable)],
   ];
 
   doc.fontSize(8);
   rows.forEach(([label, value], idx) => {
     const ly = y + idx * lineH;
-    doc.fillColor(C.text).font(idx === rows.length - 1 ? 'Helvetica-Bold' : 'Helvetica-Bold')
-      .text(label, labelX, ly, { width: 170, align: 'right' });
-    if (value) {
-      doc.moveTo(valueX - 4, ly + 11).lineTo(pageW - MARGIN, ly + 11)
-        .strokeColor('#b7b7b7').lineWidth(0.6).stroke();
-      doc.font(idx === rows.length - 1 ? 'Helvetica-Bold' : 'Helvetica')
-        .text(value, valueX, ly + 1, { width: 42, align: 'right' });
-    }
+    const isNet = idx === rows.length - 1;
+    doc.fillColor(C.text).font('Helvetica-Bold')
+      .text(label, labelX, ly, { width: 225, align: 'right', lineBreak: false });
+    doc.moveTo(valueX - 4, ly + 11).lineTo(pageW - MARGIN, ly + 11)
+      .strokeColor('#b7b7b7').lineWidth(0.6).stroke();
+    doc.font(isNet ? 'Helvetica-Bold' : 'Helvetica')
+      .text(String(value ?? '0'), valueX, ly + 1, { width: 42, align: 'right' });
   });
 
   return y + rows.length * lineH;

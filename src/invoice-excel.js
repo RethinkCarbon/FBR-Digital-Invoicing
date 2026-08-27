@@ -4,7 +4,7 @@ const ExcelJS = require('exceljs');
 const JSZip = require('jszip');
 const fs = require('fs');
 const path = require('path');
-const { parseInvoiceDate } = require('./invoice-template');
+const { parseInvoiceDate, resolveWithholding } = require('./invoice-template');
 
 function roundAmount(value) {
   const amount = Number(value);
@@ -220,18 +220,17 @@ async function generateSingleInvoiceExcel(invoice) {
   const totalDue = invoice.total_amount != null
     ? Number(invoice.total_amount)
     : subtotal + totalSalesTax + furtherTax;
-  const withholdingRate = parseFloat(invoice.withholding_rate ?? payload.withholdingRate ?? 0) || 0;
-  const withholdingAmount = invoice.withholding_amount != null
-    ? Number(invoice.withholding_amount)
-    : totalDue * (withholdingRate / 100);
-  const netPayable = invoice.net_payable != null
-    ? Number(invoice.net_payable)
-    : totalDue - withholdingAmount;
+  const { withholdingRate, withholdingAmount, netPayable } = resolveWithholding(
+    invoice,
+    payload,
+    totalDue
+  );
   const salesTaxRateLabel = firstTaxRateLabel(items, payload);
 
   const zip = await JSZip.loadAsync(fs.readFileSync(templatePath));
   let sheetXml = await zip.file('xl/worksheets/sheet1.xml').async('string');
 
+  sheetXml = setTextCell(sheetXml, 'C3', 'Invoice');
   sheetXml = setTextCell(sheetXml, 'C5', sellerName);
   sheetXml = setTextCell(sheetXml, 'C6', sellerAddr1);
   sheetXml = setTextCell(sheetXml, 'C7', sellerAddr2);
@@ -272,18 +271,20 @@ async function generateSingleInvoiceExcel(invoice) {
     }
   }
 
-  sheetXml = setTextCell(sheetXml, 'H30', formatAmountDisplay(subtotal));
-  sheetXml = setTextCell(sheetXml, 'E31', `Sales Tax Rate : ${salesTaxRateLabel}`);
+  sheetXml = setNumberCell(sheetXml, 'H30', roundAmount(subtotal));
+  sheetXml = setTextCell(sheetXml, 'E31', '');
+  sheetXml = setTextCell(sheetXml, 'F31', `Sales Tax Rate : ${salesTaxRateLabel}`);
   sheetXml = setTextCell(sheetXml, 'G31', 'Add:SALES TAX (US$)');
-  sheetXml = setTextCell(sheetXml, 'H31', formatAmountDisplay(totalSalesTax));
+  sheetXml = setNumberCell(sheetXml, 'H31', roundAmount(totalSalesTax));
   sheetXml = setTextCell(sheetXml, 'D32', bank.accountTitle);
-  sheetXml = setTextCell(sheetXml, 'H32', formatAmountDisplay(totalDue));
+  sheetXml = setNumberCell(sheetXml, 'H32', roundAmount(totalDue));
   sheetXml = setTextCell(sheetXml, 'D33', bank.bankName);
-  sheetXml = setTextCell(sheetXml, 'E33', `WHT Rate : ${withholdingRate}%`);
+  sheetXml = setTextCell(sheetXml, 'E33', '');
+  sheetXml = setTextCell(sheetXml, 'F33', `WHT Rate : ${withholdingRate}%`);
   sheetXml = setTextCell(sheetXml, 'G33', 'Less: WHT TAX (US$)');
-  sheetXml = setTextCell(sheetXml, 'H33', formatAmountDisplay(withholdingAmount));
+  sheetXml = setNumberCell(sheetXml, 'H33', roundAmount(withholdingAmount));
   sheetXml = setTextCell(sheetXml, 'D34', bank.iban || '');
-  sheetXml = setTextCell(sheetXml, 'H34', formatAmountDisplay(netPayable));
+  sheetXml = setNumberCell(sheetXml, 'H34', roundAmount(netPayable));
 
   zip.file('xl/worksheets/sheet1.xml', sheetXml);
 

@@ -64,6 +64,47 @@ function formatRate(rate) {
   return isInt ? String(Math.round(v)) : String(v);
 }
 
+function parsePercent(value) {
+  if (value == null || value === '') return null;
+  const match = String(value).match(/-?[\d.]+/);
+  if (!match) return null;
+  const n = parseFloat(match[0]);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Prefer a real WHT rate/amount over DB defaults of 0 when the payload still has the value. */
+function resolveWithholding(source = {}, payload = {}, totalDue = 0) {
+  const rateCandidates = [
+    source.withholding_rate,
+    source.wht_rate,
+    payload.withholdingRate,
+    payload.withholding_rate,
+  ].map(parsePercent).filter(n => n != null);
+  const rate = rateCandidates.find(n => n > 0) ?? rateCandidates[0] ?? 0;
+
+  const amountCandidates = [
+    source.withholding_amount,
+    payload.withholdingAmount,
+    payload.withholding_amount,
+  ].map(parsePercent).filter(n => n != null);
+  const storedAmount = amountCandidates.find(n => n > 0) ?? amountCandidates[0];
+  const withholdingAmount = (storedAmount != null && !(storedAmount === 0 && rate > 0))
+    ? storedAmount
+    : totalDue * (rate / 100);
+
+  const netCandidates = [
+    source.net_payable,
+    payload.netPayable,
+    payload.net_payable,
+  ].map(parsePercent).filter(n => n != null);
+  const storedNet = netCandidates.find(n => n !== 0) ?? netCandidates[0];
+  const netPayable = (storedNet != null && !(storedAmount === 0 && rate > 0))
+    ? storedNet
+    : totalDue - withholdingAmount;
+
+  return { withholdingRate: rate, withholdingAmount, netPayable };
+}
+
 function buildBuyerAddress(payload) {
   const parts = [payload.buyerAddress, payload.buyerProvince].filter(Boolean);
   return parts.join(', ') || '—';
@@ -153,13 +194,6 @@ function generateInvoiceHTML(data) {
         </tr>`).join('');
 
   const furtherTax = items.reduce((s, it) => s + (parseFloat(it.furtherTax) || 0), 0);
-  const withholdingRate = parseFloat(
-    data.withholding_rate
-    ?? data.wht_rate
-    ?? payload.withholdingRate
-    ?? payload.withholding_rate
-    ?? 0
-  ) || 0;
 
   // Apply saved invoice overrides before computing totals
   if (data.subtotal != null) subtotal = parseFloat(data.subtotal) || subtotal;
@@ -169,12 +203,7 @@ function generateInvoiceHTML(data) {
     ? parseFloat(data.total_amount)
     : subtotal + salesTax + furtherTax;
 
-  // Screenshot WHT is calculated on TOTAL (including sales tax).
-  const withholdingAmount = data.withholding_amount != null
-    ? parseFloat(data.withholding_amount) || 0
-    : totalDue * (withholdingRate / 100);
-
-  const netPayable = totalDue - withholdingAmount;
+  const { withholdingRate, withholdingAmount, netPayable } = resolveWithholding(data, payload, totalDue);
   const salesTaxRateLabel = firstTaxRate(items, payload);
   const sellerLines = compactAddressLines(sellerAddress);
   const bankLines = bankDetailLines(data);
@@ -281,11 +310,12 @@ function generateInvoiceHTML(data) {
 
     .invoice-title {
       text-align: center;
-      font-size: 16px;
+      font-size: 22px;
       font-weight: 800;
-      letter-spacing: 0.01em;
+      letter-spacing: 0.06em;
       line-height: 1.2;
       color: #111111;
+      text-transform: uppercase;
     }
 
     .header-right {
@@ -478,8 +508,7 @@ function generateInvoiceHTML(data) {
       text-align: right;
       font-weight: 600;
       padding-right: 8px;
-      white-space: normal;
-      word-break: break-word;
+      white-space: nowrap;
     }
 
     .totals-table td:last-child {
@@ -572,7 +601,7 @@ function generateInvoiceHTML(data) {
       </div>
 
       <div class="header-center">
-        <div class="invoice-title">PERFORMA SALES TAX INVOICE</div>
+        <div class="invoice-title">Invoice</div>
       </div>
 
       <div class="header-right">
@@ -627,10 +656,9 @@ function generateInvoiceHTML(data) {
       <table class="totals-table">
         <tbody>
           <tr><td>SUBTOTAL (US$)</td><td>${formatPlainAmount(subtotal)}</td></tr>
-          <tr><td>Sales Tax Rate: ${escapeHtml(salesTaxRateLabel)} add-SALES TAX (US$)</td><td>${formatPlainAmount(salesTax)}</td></tr>
+          <tr><td>Sales Tax Rate : ${escapeHtml(salesTaxRateLabel)} &nbsp; Add: SALES TAX (US$)</td><td>${formatPlainAmount(salesTax)}</td></tr>
           <tr><td>TOTAL (US$)</td><td>${formatPlainAmount(totalDue)}</td></tr>
-          <tr><td>WHT Rate : ${formatRate(withholdingRate)}%</td><td></td></tr>
-          <tr><td>Less- WHT TAX (US$)</td><td>${formatPlainAmount(withholdingAmount)}</td></tr>
+          <tr><td>WHT Rate : ${formatRate(withholdingRate)}% &nbsp; Less: WHT TAX (US$)</td><td>${formatPlainAmount(withholdingAmount)}</td></tr>
           <tr class="net"><td>NET PAYABLE (US$)</td><td>${formatPlainAmount(netPayable)}</td></tr>
         </tbody>
       </table>
@@ -650,4 +678,6 @@ module.exports = {
   formatPkr,
   formatDisplayDate,
   parseInvoiceDate,
+  formatRate,
+  resolveWithholding,
 };
