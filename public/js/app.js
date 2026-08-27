@@ -701,18 +701,90 @@ function setSroControl(row, fieldName, options, { placeholder = '— Select —'
   const existing = row.querySelector(`[name="${fieldName}_${idx}"]`);
   if (!existing) return null;
 
+  const esc = (s) => String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+
   const parent = existing.parentElement;
   const select = document.createElement('select');
   select.name = `${fieldName}_${idx}`;
   select.innerHTML = `<option value="">${placeholder}</option>` + (options || []).map(opt => {
     const sel = String(opt.value) === String(selected) ? ' selected' : '';
-    const title = opt.hint ? ` title="${opt.hint}"` : '';
-    const hint = opt.hint ? ` (${opt.hint})` : '';
-    return `<option value="${opt.value}"${opt.sroId != null ? ` data-sro-id="${opt.sroId}"` : ''}${title}${sel}>${opt.label}${hint}</option>`;
+    const titleRaw = opt.title || opt.hint || '';
+    const title = titleRaw ? ` title="${esc(titleRaw)}"` : '';
+    const trailing = opt.hint ? ` (${esc(opt.hint)})` : '';
+    return `<option value="${esc(opt.value)}"${opt.sroId != null ? ` data-sro-id="${esc(opt.sroId)}"` : ''}${title}${sel}>${esc(opt.label)}${trailing}</option>`;
   }).join('');
   if (selected) select.value = selected;
   parent.replaceChild(select, existing);
   return select;
+}
+
+function getScheduleValueForRow(row) {
+  const idx = row.id.replace('item-row-', '');
+  return row.querySelector(`[name="sroScheduleNo_${idx}"]`)?.value || '';
+}
+
+function enrichSroItemOptions(items, tableHint) {
+  return (items || []).map(item => {
+    const serial = String(item.srO_ITEM_DESC ?? item.sroItemDesc ?? item.sro_item_desc ?? '').trim();
+    if (!serial) return null;
+    const id = item.srO_ITEM_ID ?? item.sroItemId ?? '';
+    if (typeof formatIctoItemLabel === 'function') {
+      const formatted = formatIctoItemLabel(serial, id, tableHint);
+      return { value: serial, label: formatted.label, hint: formatted.hint, title: formatted.title };
+    }
+    return { value: serial, label: id ? `${serial} (id ${id})` : serial };
+  }).filter(Boolean);
+}
+
+function applySroItemHsSuggestion(row, options, { force = false } = {}) {
+  if (!row || !options?.length || typeof suggestIctoSerialFromHs !== 'function') return null;
+  const idx = row.id.replace('item-row-', '');
+  const hsCode = row.querySelector(`[name="hsCode_${idx}"]`)?.value?.trim() || '';
+  const tableHint = typeof ictoTableFromSchedule === 'function'
+    ? ictoTableFromSchedule(getScheduleValueForRow(row))
+    : null;
+  const suggestion = suggestIctoSerialFromHs(hsCode, options, tableHint);
+  if (!suggestion || suggestion.genericHs) return suggestion;
+
+  const select = row.querySelector(`[name="sroItemSerialNo_${idx}"]`);
+  if (!select) return suggestion;
+
+  const current = select.value || '';
+  const wasAuto = select.dataset.sroItemAutoSuggest === '1';
+  if (!current || force || wasAuto) {
+    select.value = suggestion.value;
+    select.dataset.sroItemAutoSuggest = '1';
+  }
+  return suggestion;
+}
+
+function bindSroItemHsSuggest(row, options) {
+  const idx = row.id.replace('item-row-', '');
+  const hsEl = row.querySelector(`[name="hsCode_${idx}"]`);
+  const select = row.querySelector(`[name="sroItemSerialNo_${idx}"]`);
+  if (!hsEl || !select) return;
+
+  select.addEventListener('change', () => {
+    select.dataset.sroItemAutoSuggest = '';
+  });
+
+  const onHs = () => {
+    const suggestion = applySroItemHsSuggestion(row, options, { force: false });
+    if (suggestion && select.dataset.sroItemAutoSuggest === '1') {
+      setSroStatus(
+        row,
+        `Item S/N suggested from HS ${hsEl.value.trim()}: ${suggestion.value} — ${suggestion.description}`
+      );
+    }
+  };
+  hsEl.removeEventListener('input', hsEl._sroHsSuggestHandler);
+  hsEl.removeEventListener('change', hsEl._sroHsSuggestHandler);
+  hsEl._sroHsSuggestHandler = onHs;
+  hsEl.addEventListener('input', onHs);
+  hsEl.addEventListener('change', onHs);
 }
 
 async function refreshSroItemSerialForRow(row, sroId) {
@@ -721,27 +793,60 @@ async function refreshSroItemSerialForRow(row, sroId) {
   const invoiceDate = document.getElementById('invoiceDate')?.value;
   if (!invoiceDate) return;
 
+  const tableHint = typeof ictoTableFromSchedule === 'function'
+    ? ictoTableFromSchedule(getScheduleValueForRow(row))
+    : null;
+
   try {
     const params = new URLSearchParams({ date: invoiceDate, sro_id: String(sroId) });
     const items = unwrapFbrList(await apiFetch(`/api/sro-item?${params}`));
     const current = row.querySelector(`[name="sroItemSerialNo_${idx}"]`)?.value || '';
-    const options = items.map(item => {
-      const serial = String(item.srO_ITEM_DESC ?? item.sroItemDesc ?? item.sro_item_desc ?? '').trim();
-      const id = item.srO_ITEM_ID ?? item.sroItemId ?? '';
-      return serial ? { value: serial, label: id ? `${serial} (id ${id})` : serial } : null;
-    }).filter(Boolean);
+    const options = enrichSroItemOptions(items, tableHint);
 
     if (!options.length) {
       setSroStatus(row, `SRO schedule loaded (id ${sroId}). No item serials returned for this SRO.`);
       return;
     }
 
+    const hsCode = row.querySelector(`[name="hsCode_${idx}"]`)?.value?.trim() || '';
+    const suggestion = (typeof suggestIctoSerialFromHs === 'function')
+      ? suggestIctoSerialFromHs(hsCode, options, tableHint)
+      : null;
+
+    let selected = current;
+    let autoSuggested = false;
+    const canAutoPick = suggestion && !suggestion.genericHs;
+    if (!selected && canAutoPick) {
+      selected = suggestion.value;
+      autoSuggested = true;
+    } else if (!selected && options.length === 1) {
+      selected = options[0].value;
+      autoSuggested = true;
+    }
+
     const select = setSroControl(row, 'sroItemSerialNo', options, {
       placeholder: '— Select item S/N —',
-      selected: current,
+      selected,
     });
-    if (select && !select.value && options.length === 1) {
-      select.value = options[0].value;
+    if (select) {
+      select.dataset.sroItemAutoSuggest = autoSuggested ? '1' : '';
+      bindSroItemHsSuggest(row, options);
+    }
+
+    if (suggestion && !suggestion.genericHs) {
+      setSroStatus(
+        row,
+        autoSuggested
+          ? `Item S/N auto-picked from HS ${hsCode}: ${suggestion.value} — ${suggestion.description}`
+          : `Loaded ${options.length} item S/N(s). HS ${hsCode} suggests ${suggestion.value} — ${suggestion.description}`
+      );
+    } else if (suggestion?.genericHs) {
+      setSroStatus(
+        row,
+        `Loaded ${options.length} item S/N(s). HS ${hsCode} is broad — pick the ICTO serial manually (e.g. check labels).`
+      );
+    } else {
+      setSroStatus(row, `Loaded ${options.length} item S/N(s). Pick the ICTO serial that matches your service.`);
     }
   } catch (err) {
     setSroStatus(row, `SRO item lookup failed: ${err.message}`, true);
