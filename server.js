@@ -27,6 +27,11 @@ const {
   getCompanySettings,
   seedDefaultCompanySettings,
 } = require('./src/services/company-settings-service');
+const {
+  getInvoiceTypes,
+  creditNoteAvailable,
+  DEFAULT_INVOICE_TYPES,
+} = require('./src/services/doctype-service');
 
 const app         = express();
 const PORT        = process.env.PORT || 3000;
@@ -171,6 +176,26 @@ app.get('/api/config', async (req, res) => {
       companySettings = null;
     }
 
+    let invoiceTypesByEnv = {
+      sandbox:    DEFAULT_INVOICE_TYPES,
+      production: DEFAULT_INVOICE_TYPES,
+    };
+    try {
+      const [sandboxTypes, productionTypes] = await Promise.all([
+        getInvoiceTypes('sandbox'),
+        getInvoiceTypes('production'),
+      ]);
+      invoiceTypesByEnv = {
+        sandbox:    sandboxTypes,
+        production: productionTypes,
+      };
+    } catch {
+      // keep defaults when FBR reference API is unavailable
+    }
+
+    const activeEnvKey = DEFAULT_ENV === 'production' ? 'production' : 'sandbox';
+    const invoiceTypes = invoiceTypesByEnv[activeEnvKey] || DEFAULT_INVOICE_TYPES;
+
     res.json({
       appMode:              APP_MODE,
       planetiveMode:        planetive,
@@ -191,6 +216,13 @@ app.get('/api/config', async (req, res) => {
       mockScenario:         getMockConfig().scenario,
       workerEnabled:        process.env.WORKER_ENABLED !== 'false',
       companySettings,
+      invoiceTypes,
+      invoiceTypesByEnv,
+      creditNoteEnabled:    creditNoteAvailable(invoiceTypes),
+      creditNoteEnabledByEnv: {
+        sandbox:    creditNoteAvailable(invoiceTypesByEnv.sandbox),
+        production: creditNoteAvailable(invoiceTypesByEnv.production),
+      },
     });
   } catch (err) {
     res.status(500).json({ error: true, message: err.message });

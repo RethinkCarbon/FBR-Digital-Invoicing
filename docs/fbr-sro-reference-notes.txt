@@ -1,0 +1,37 @@
+FBR SRO reference — what exists vs what does not
+================================================
+
+1) SRO / Schedule codes (S1000xxx)
+   - YES: published in FBR DI API technical docs (reference table / §10.2 style list)
+   - Local copy: docs/fbr-sro-schedule-codes.csv
+   - Source code: src/constants/sro-schedule-codes.js
+   - ICTO rows in that list:
+       S1000452 = ICTO Table I
+       S1000431 = ICTO Table II
+   - These are SCHEDULE NAMES only, not item serials.
+
+2) SRO Item Detail (item serials under a schedule)
+   - NO full static document / PDF table from FBR with every SRO Item.
+   - FBR only documents the LIVE APIs + tiny samples:
+
+     a) Master-ish list (no date/sro filter):
+        GET https://gw.fbr.gov.pk/pdi/v1/sroitemcode
+        Sample only shows e.g. { srO_ITEM_ID: 724, srO_ITEM_DESC: "9" }
+
+     b) Items for one schedule (what invoice Item S/N uses):
+        GET https://gw.fbr.gov.pk/pdi/v2/SROItem?date=YYYY-MM-DD&sro_id=389
+        Sample only shows e.g. DESC "50", "51" for sro_id=389
+
+   - In this app:
+        Reference → SRO Item Codes     → /api/sro-item-codes
+        Reference → SRO Item Detail    → /api/sro-item?date=&sro_id=
+        Invoice advanced fields load the same after you pick a schedule.
+
+3) How to manually find Item S/N for ICTO
+   - Pick rate ≠ 18% on invoice (or use Reference → SRO Schedule)
+   - Get numeric srO_ID for "ICTO Table I/II"
+   - Call SRO Item Detail with that sro_id + date
+   - Use returned srO_ITEM_DESC as sroItemSerialNo on the invoice
+
+Official PDF (DI API v1.12):
+https://download1.fbr.gov.pk/Docs/20257301172130815TechnicalDocumentationforDIAPIV1.12.pdf

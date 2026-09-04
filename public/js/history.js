@@ -107,7 +107,7 @@ function renderNoteInfoBlock(inv, p) {
     </div>`;
 }
 
-function renderEditPolicyPanel(policy, limitInfo) {
+function renderEditPolicyPanel(policy) {
   if (!policy || policy.workflowStatus !== 'submitted') return '';
 
   const deadline = policy.cancelDeadline
@@ -126,24 +126,6 @@ function renderEditPolicyPanel(policy, limitInfo) {
         ? `Allowed — ${policy.hoursRemaining}h remaining`
         : 'Window expired (72h from submission)';
 
-  let limitHtml = '';
-  if (limitInfo) {
-    const pct = limitInfo.usedPercent ?? 0;
-    const barClass = pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : '';
-    limitHtml = `
-      <div class="limit-inline">
-        <div class="limit-inline-label">
-          Monthly cancellation limit (${limitInfo.currentMonthLabel})
-          — ${formatMoney(limitInfo.cancellationValue)} used of ${formatMoney(limitInfo.cancellationLimit)}
-          (${limitInfo.limitPercent}% of ${limitInfo.lastMonthLabel} sales)
-        </div>
-        <div class="limit-bar limit-bar-sm">
-          <div class="limit-bar-fill ${barClass}" style="width:${Math.min(100, pct)}%"></div>
-        </div>
-        <div class="limit-inline-remaining">Remaining: <strong>${formatMoney(limitInfo.remainingLimit)}</strong></div>
-      </div>`;
-  }
-
   return `
     <div class="edit-policy-panel">
       <h4 class="item-statuses-title">FBR Edit &amp; Cancel Rules</h4>
@@ -153,7 +135,6 @@ function renderEditPolicyPanel(policy, limitInfo) {
         <div><span class="detail-label">Header Fields</span>${policy.headerLocked ? 'Locked after submission' : 'Editable'}</div>
         <div><span class="detail-label">Item Edits</span>${policy.canEditItems ? `${policy.editableItemSnos.length} item(s) editable (once each)` : 'None available'}</div>
       </div>
-      ${limitHtml}
       <p class="policy-note">Edited line items cannot be cancelled. Each line item may only be edited once.</p>
     </div>`;
 }
@@ -300,14 +281,9 @@ async function viewInvoiceDetail(id) {
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   try {
-    const envParam = typeof activeEnv !== 'undefined' && activeEnv
-      ? `?environment=${encodeURIComponent(activeEnv)}`
-      : '';
-
-    const [inv, policy, limitInfo] = await Promise.all([
+    const [inv, policy] = await Promise.all([
       apiFetch(`/api/invoices/${id}`),
       apiFetch(`/api/invoices/${id}/edit-policy`).catch(() => null),
-      apiFetch(`/api/invoices/cancellation-limit${envParam}`).catch(() => null),
     ]);
     const p   = inv.request_payload || {};
 
@@ -338,7 +314,7 @@ async function viewInvoiceDetail(id) {
         <div><span class="detail-label">Created</span>${inv.created_at ? new Date(inv.created_at).toLocaleString() : '—'}</div>
       </div>
       ${renderNoteInfoBlock(inv, p)}
-      ${renderEditPolicyPanel(policy, limitInfo)}
+      ${renderEditPolicyPanel(policy)}
       ${renderItemStatusesTable(itemStatuses, p.items || [], policy?.items || [])}
       ${inv.error_message ? `<div class="alert alert-warning" style="margin-top:14px">${escapeHtml(inv.error_message)}</div>` : ''}
       <details style="margin-top:14px">
@@ -360,7 +336,9 @@ async function viewInvoiceDetail(id) {
     }
     if (inv.workflow_status === 'submitted' && (inv.note_type || 'sale') === 'sale' && inv.fbr_invoice_number) {
       actionHtml += `<button type="button" class="btn btn-outline btn-sm" data-note-debit="${id}"><i data-lucide="file-plus"></i> Debit note</button>`;
-      actionHtml += `<button type="button" class="btn btn-outline btn-sm" data-note-credit="${id}"><i data-lucide="file-minus"></i> Credit note</button>`;
+      if (typeof creditNoteEnabled === 'function' && creditNoteEnabled()) {
+        actionHtml += `<button type="button" class="btn btn-outline btn-sm" data-note-credit="${id}"><i data-lucide="file-minus"></i> Credit note</button>`;
+      }
     }
     if (policy?.cancelAllowed) {
       actionHtml += `<button type="button" class="btn btn-warning btn-sm" data-cancel-fbr="${id}"><i data-lucide="ban"></i> Cancel on FBR</button>`;
@@ -391,7 +369,7 @@ async function viewInvoiceDetail(id) {
     });
 
     const cancelFbrBtn = actions.querySelector('[data-cancel-fbr]');
-    if (cancelFbrBtn) cancelFbrBtn.addEventListener('click', () => cancelFbrInvoice(id, limitInfo));
+    if (cancelFbrBtn) cancelFbrBtn.addEventListener('click', () => cancelFbrInvoice(id));
 
     const retryBtn = actions.querySelector('[data-retry]');
     if (retryBtn) retryBtn.addEventListener('click', () => retryInvoice(id));
@@ -436,11 +414,8 @@ function startItemEdit(inv, policy) {
   loadInvoiceForItemEdit(inv, policy);
 }
 
-async function cancelFbrInvoice(id, limitInfo) {
-  let msg = 'Cancel this invoice on FBR?\n\nMust be within 72 hours of submission. Edited items cannot be cancelled.';
-  if (limitInfo) {
-    msg += `\n\nRemaining monthly limit: ${formatMoney(limitInfo.remainingLimit)} of ${formatMoney(limitInfo.cancellationLimit)} (${limitInfo.limitPercent}% of prior month sales).`;
-  }
+async function cancelFbrInvoice(id) {
+  const msg = 'Cancel this invoice on FBR?\n\nMust be within 72 hours of submission. Edited items cannot be cancelled.';
   if (!confirm(msg)) return;
 
   try {

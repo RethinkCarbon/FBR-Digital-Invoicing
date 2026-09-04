@@ -237,6 +237,8 @@ function stripNonFbrFields(payload) {
     withholding_rate,
     withholdingAmount,
     withholding_amount,
+    adjustmentType,
+    note_type,
     ...fbrPayload
   } = payload;
   return fbrPayload;

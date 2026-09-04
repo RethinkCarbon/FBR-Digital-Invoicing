@@ -124,6 +124,13 @@
   <div id="sandbox-info" class="alert alert-info" style="display:none">
     <i data-lucide="info"></i> Running in <strong>SANDBOX</strong> mode. Scenario ID is required. Results are not submitted to production FBR.
   </div>
+  <div id="credit-note-alert" class="alert alert-warning" style="display:none">
+    <i data-lucide="alert-triangle"></i>
+    <strong>Credit Note not available on your FBR registration.</strong>
+    FBR only returns <em>Sale Invoice</em> and <em>Debit Note</em> for most accounts (FBR 0071).
+    Debit Note is for <strong>increases only</strong> (FBR 0067) — it cannot reduce tax.
+    Contact PRAL/FBR to enable Credit Note, or use <strong>Cancel on FBR</strong> within 72 hours for full reversals.
+  </div>
 
   <form id="invoice-form" novalidate>
     <div id="edit-mode-banner" class="alert alert-info" style="display:none">
@@ -154,7 +161,6 @@
           <select id="invoiceType" name="invoiceType" required>
             <option value="Sale Invoice">Sale Invoice</option>
             <option value="Debit Note">Debit Note</option>
-            <option value="Credit Note">Credit Note</option>
           </select>
         </div>
 

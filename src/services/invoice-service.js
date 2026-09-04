@@ -17,13 +17,7 @@ function computeNextRetryAt(retryCount) {
   const delaySec = RETRY_DELAYS_SEC[Math.min(retryCount, RETRY_DELAYS_SEC.length - 1)];
   return new Date(Date.now() + delaySec * 1000).toISOString();
 }
-
-function noteTypeFromPayload(payload = {}) {
-  const t = (payload.invoiceType || '').toLowerCase();
-  if (t.includes('debit')) return 'debit';
-  if (t.includes('credit')) return 'credit';
-  return 'sale';
-}
+const { resolveAdjustmentType } = require('./note-validation-service');
 
 function extractMetaFromPayload(payload = {}) {
   const items = Array.isArray(payload.items) ? payload.items : [];
@@ -54,7 +48,7 @@ function extractMetaFromPayload(payload = {}) {
     withholding_rate:   wht.withholdingRate,
     withholding_amount: wht.withholdingAmount,
     net_payable:        wht.netPayable,
-    note_type:     noteTypeFromPayload(payload),
+    note_type:     resolveAdjustmentType(payload),
     note_reason:   payload.reason ?? null,
   };
 }

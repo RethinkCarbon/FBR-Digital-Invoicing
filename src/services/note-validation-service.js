@@ -17,12 +17,20 @@ function noteTypeFromPayload(payload = {}) {
   return 'sale';
 }
 
+function resolveAdjustmentType(payload = {}) {
+  const explicit = String(payload.adjustmentType ?? payload.note_type ?? '').toLowerCase();
+  if (explicit === 'credit' || explicit === 'debit' || explicit === 'sale') {
+    return explicit;
+  }
+  return noteTypeFromPayload(payload);
+}
+
 function validateRequiredNoteFields(payload = {}) {
   if (!isAdjustmentNote(payload)) {
     return { noteType: 'sale', originalInvoiceId: null };
   }
 
-  const noteType = noteTypeFromPayload(payload);
+  const noteType = resolveAdjustmentType(payload);
   if (!payload.invoiceRefNo?.trim()) {
     throw new Error('Invoice Reference No. is required for debit/credit notes (FBR 0026)');
   }
@@ -85,6 +93,21 @@ function validateNoteAgainstOriginal(payload, original, noteType) {
         );
       }
 
+      const noteSt = parseFloat(noteItem.salesTaxApplicable) || 0;
+      const origSt = parseFloat(origItem.salesTaxApplicable) || 0;
+      if (noteSt < 0) {
+        throw new Error(
+          `Credit Note: item ${i + 1} sales tax cannot be negative (${noteSt.toFixed(2)}). ` +
+          'Enter the reduced amount on the line (e.g. 0), not a negative adjustment.'
+        );
+      }
+      if (noteSt > origSt) {
+        throw new Error(
+          `Credit Note: item ${i + 1} sales tax (${noteSt.toFixed(2)}) exceeds ` +
+          `original (${origSt.toFixed(2)}) (FBR 0068)`
+        );
+      }
+
       const noteStwh = parseFloat(noteItem.salesTaxWithheldAtSource) || 0;
       const origStwh = parseFloat(origItem.salesTaxWithheldAtSource) || 0;
       if (noteStwh > origStwh) {
@@ -105,9 +128,12 @@ function validateNoteAgainstOriginal(payload, original, noteType) {
       const noteSt = parseFloat(noteItem.salesTaxApplicable) || 0;
       const origSt = parseFloat(origItem.salesTaxApplicable) || 0;
       if (noteSt <= origSt) {
+        const hint = noteSt < 0 || noteSt < origSt
+          ? ' Debit Note is for increases only. For reductions, use Credit Note (requires FBR enablement).'
+          : '';
         throw new Error(
           `Debit Note: item ${i + 1} sales tax (${noteSt.toFixed(2)}) must exceed ` +
-          `original (${origSt.toFixed(2)}) for an upward adjustment (FBR 0067)`
+          `original (${origSt.toFixed(2)}) for an upward adjustment (FBR 0067).${hint}`
         );
       }
     }
@@ -135,6 +161,7 @@ module.exports = {
   NOTE_WINDOW_MS,
   isAdjustmentNote,
   noteTypeFromPayload,
+  resolveAdjustmentType,
   validateRequiredNoteFields,
   findOriginalByRef,
   validateNoteAgainstOriginal,

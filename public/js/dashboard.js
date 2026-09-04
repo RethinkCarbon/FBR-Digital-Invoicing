@@ -147,44 +147,7 @@ function renderStatCard(iconName, value, label) {
   `;
 }
 
-function renderCancellationLimitCard(limit) {
-  if (!limit) return '';
-
-  const pct = limit.usedPercent ?? 0;
-  const barClass = pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : '';
-
-  return `
-    <div class="card cancel-limit-card">
-      <div class="card-title"><span class="icon"><i data-lucide="shield-alert"></i></span> FBR Cancellation Limit (${limit.currentMonthLabel})</div>
-      <p class="cancel-limit-desc">
-        You may cancel up to <strong>${limit.limitPercent}%</strong> of last month's submitted sales
-        (<strong>${limit.lastMonthLabel}</strong>: ${dashboardFormatMoney(limit.lastMonthSales)}).
-      </p>
-      <div class="limit-stats-row">
-        <div class="limit-stat">
-          <span class="limit-stat-value">${dashboardFormatMoney(limit.cancellationLimit)}</span>
-          <span class="limit-stat-label">Monthly limit</span>
-        </div>
-        <div class="limit-stat">
-          <span class="limit-stat-value">${dashboardFormatMoney(limit.cancellationValue)}</span>
-          <span class="limit-stat-label">Used this month</span>
-        </div>
-        <div class="limit-stat">
-          <span class="limit-stat-value">${dashboardFormatMoney(limit.remainingLimit)}</span>
-          <span class="limit-stat-label">Remaining</span>
-        </div>
-        <div class="limit-stat">
-          <span class="limit-stat-value">${pct}%</span>
-          <span class="limit-stat-label">Used</span>
-        </div>
-      </div>
-      <div class="limit-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
-        <div class="limit-bar-fill ${barClass}" style="width:${Math.min(100, pct)}%"></div>
-      </div>
-    </div>`;
-}
-
-function renderDashboard(stats, recent, limitInfo) {
+function renderDashboard(stats, recent) {
   const container = document.getElementById('dashboard-content');
   if (!container) return;
 
@@ -203,8 +166,6 @@ function renderDashboard(stats, recent, limitInfo) {
   container.innerHTML = `
     ${renderDashboardStatCards(stats)}
     ${renderSalesCharts(stats.sales)}
-
-    ${renderCancellationLimitCard(limitInfo)}
 
     <div class="card">
       <div class="card-title"><span class="icon"><i data-lucide="history"></i></span> Recent Invoices</div>
@@ -258,13 +219,12 @@ async function loadDashboard() {
     const listParams = new URLSearchParams({ limit: '5', offset: '0' });
     if (env) listParams.set('environment', env);
 
-    const [stats, listData, limitInfo] = await Promise.all([
+    const [stats, listData] = await Promise.all([
       apiFetch(`/api/invoices/stats${statsParams}`),
       apiFetch(`/api/invoices?${listParams.toString()}`),
-      apiFetch(`/api/invoices/cancellation-limit${statsParams}`).catch(() => null),
     ]);
 
-    renderDashboard(stats, listData.items || [], limitInfo);
+    renderDashboard(stats, listData.items || []);
   } catch (err) {
     renderDashboardError(err.message || 'Failed to load dashboard.');
   }

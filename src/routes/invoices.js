@@ -17,7 +17,6 @@ const { generateInvoiceHTML } = require('../invoice-template');
 const { generateInvoicePDF }  = require('../invoice-pdf');
 const { generateInvoicesExcel, generateSingleInvoiceExcel } = require('../invoice-excel');
 const { buildFbrPayload, prepareFbrSubmission } = require('../services/payload-builder');
-const { getCancellationLimit } = require('../services/cancellation-limit-service');
 const {
   getInvoiceEditPolicy,
   requestFbrCancellation,
@@ -114,16 +113,6 @@ function createInvoiceRouter({ fbrHandlers }) {
     try {
       const { environment } = req.query;
       const stats = await getQueueStats({ environment });
-      res.json(stats);
-    } catch (err) {
-      res.status(500).json({ error: true, message: err.message });
-    }
-  });
-
-  router.get('/cancellation-limit', async (req, res) => {
-    try {
-      const { environment } = req.query;
-      const stats = await getCancellationLimit({ environment });
       res.json(stats);
     } catch (err) {
       res.status(500).json({ error: true, message: err.message });
@@ -252,8 +241,10 @@ function createInvoiceRouter({ fbrHandlers }) {
   router.post('/:id/edit-items', async (req, res) => {
     try {
       const { items, noteType, reason } = req.body || {};
-      const enrichFn = (payload, { environment, clientId }) =>
-        buildFbrPayload(payload, { environment, clientId });
+      const enrichFn = async (payload, { environment, clientId }) => {
+        const { payload: enriched } = await prepareFbrSubmission(payload, { environment, clientId });
+        return enriched;
+      };
 
       const row = await submitItemEdit(req.params.id, { items, noteType, reason }, enrichFn);
 

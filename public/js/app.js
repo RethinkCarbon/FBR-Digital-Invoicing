@@ -161,6 +161,12 @@ function applyEnvUI() {
   } else if (prodWarn) {
     prodWarn.style.display = 'none';
   }
+
+  if (appConfig.invoiceTypesByEnv) {
+    appConfig.invoiceTypes = appConfig.invoiceTypesByEnv[activeEnv] || appConfig.invoiceTypes;
+    appConfig.creditNoteEnabled = appConfig.creditNoteEnabledByEnv?.[activeEnv] ?? creditNoteEnabled();
+  }
+  syncInvoiceTypeOptions();
 }
 
 // ── Config from server ────────────────────────────────────────────────────────
@@ -380,6 +386,50 @@ function setupNav() {
 
 window.switchToPanel = switchToPanel;
 
+function creditNoteEnabled() {
+  if (typeof appConfig.creditNoteEnabledByEnv?.[activeEnv] === 'boolean') {
+    return appConfig.creditNoteEnabledByEnv[activeEnv];
+  }
+  return (appConfig.invoiceTypes || []).some(t => String(t).toLowerCase().includes('credit'));
+}
+
+function invoiceTypeToAdjustmentType(invoiceType) {
+  const t = String(invoiceType || '').toLowerCase();
+  if (t.includes('credit')) return 'credit';
+  if (t.includes('debit')) return 'debit';
+  return 'sale';
+}
+
+function syncInvoiceTypeOptions() {
+  const sel = document.getElementById('invoiceType');
+  if (!sel) return;
+
+  const types = appConfig.invoiceTypes || ['Sale Invoice', 'Debit Note'];
+  const current = sel.value;
+  sel.innerHTML = types.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+
+  if (types.includes(current)) {
+    sel.value = current;
+  } else if (current === 'Credit Note' && !creditNoteEnabled()) {
+    sel.value = 'Sale Invoice';
+  } else {
+    sel.value = types[0] || 'Sale Invoice';
+  }
+
+  updateCreditNoteAvailabilityUI();
+  updateNoteFieldsVisibility();
+}
+
+function updateCreditNoteAvailabilityUI() {
+  const alert = document.getElementById('credit-note-alert');
+  if (alert) alert.style.display = creditNoteEnabled() ? 'none' : 'flex';
+
+  const editCreditOpt = document.querySelector('#edit-note-type option[value="credit"]');
+  if (editCreditOpt) editCreditOpt.disabled = !creditNoteEnabled();
+}
+
+window.creditNoteEnabled = creditNoteEnabled;
+
 // ── Invoice Form ──────────────────────────────────────────────────────────────
 function isAdjustmentNoteType(type) {
   return type === 'Debit Note' || type === 'Credit Note';
@@ -397,6 +447,14 @@ function updateNoteFieldsVisibility() {
 function validateNoteFields() {
   const type = document.getElementById('invoiceType')?.value || '';
   if (!isAdjustmentNoteType(type)) return true;
+
+  if (invoiceTypeToAdjustmentType(type) === 'credit' && !creditNoteEnabled()) {
+    alert(
+      'Credit Note is not enabled on your FBR registration (FBR 0071). ' +
+      'Contact PRAL/FBR to enable credit notes. Debit Note cannot be used for reductions.'
+    );
+    return false;
+  }
 
   if (!document.getElementById('invoiceRefNo')?.value?.trim()) {
     alert('Reference Invoice No. is required for debit/credit notes (FBR 0026).');
@@ -1354,6 +1412,7 @@ function buildPayload() {
 
   const payload = {
     invoiceType:          val('invoiceType'),
+    adjustmentType:       invoiceTypeToAdjustmentType(val('invoiceType')),
     invoiceDate:          val('invoiceDate'),
     buyerNTNCNIC:         val('buyerNTNCNIC'),
     buyerBusinessName:    val('buyerBusinessName'),
@@ -1504,6 +1563,16 @@ function enterEditMode(originalId, editableSnos, defaultNoteType = 'debit') {
 }
 
 function applyEditNoteType(noteType) {
+  if (noteType === 'credit' && !creditNoteEnabled()) {
+    alert(
+      'Credit Note is not enabled on your FBR registration (FBR 0071). ' +
+      'Contact PRAL/FBR to enable credit notes.'
+    );
+    const noteTypeSel = document.getElementById('edit-note-type');
+    if (noteTypeSel) noteTypeSel.value = 'debit';
+    noteType = 'debit';
+  }
+
   const invoiceType = noteType === 'credit' ? 'Credit Note' : 'Debit Note';
   document.getElementById('invoiceType').value = invoiceType;
   document.getElementById('invoiceRefGroup').style.display = '';
@@ -1965,6 +2034,14 @@ function clearForm(resetDraft = true) {
 }
 
 function loadInvoiceForStandaloneNote(inv, noteType = 'debit') {
+  if (noteType === 'credit' && !creditNoteEnabled()) {
+    alert(
+      'Credit Note is not enabled on your FBR registration (FBR 0071). ' +
+      'Contact PRAL/FBR to enable credit notes. Debit Note is for increases only (FBR 0067).'
+    );
+    return;
+  }
+
   loadInvoiceIntoForm(inv);
   currentInvoiceId = null;
   setDraftUI(null);

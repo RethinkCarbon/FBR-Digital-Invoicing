@@ -4,7 +4,8 @@ const { getCompanySettings } = require('./company-settings-service');
 const { enrichPayloadTax, rateRequiresSroSchedule, resolveSroScheduleForPayload, sroScheduleRequiredMessage } = require('./tax-calculator');
 const { getScenarioPreset, getDefaultScenarioId } = require('../constants/scenario-presets');
 const { isPlanetiveMode } = require('../constants/app-mode');
-const { validateAndResolveNote } = require('./note-validation-service');
+const { validateAndResolveNote, validateRequiredNoteFields, findOriginalByRef, validateNoteAgainstOriginal, resolveAdjustmentType } = require('./note-validation-service');
+const { assertCreditNoteAllowed } = require('./doctype-service');
 const { requireValidFbrProvince } = require('../constants/provinces');
 
 function sanitizeItemForFbr(item, index) {
@@ -116,8 +117,35 @@ async function buildFbrPayload(rawPayload, { environment, clientId, skipNoteVali
 }
 
 async function prepareFbrSubmission(rawPayload, options = {}) {
-  const noteMeta = await validateAndResolveNote(rawPayload, { environment: options.environment });
-  const payload  = await buildFbrPayload(rawPayload, { ...options, skipNoteValidation: true });
+  const required = validateRequiredNoteFields(rawPayload);
+
+  if (required.noteType === 'credit') {
+    await assertCreditNoteAllowed(options.environment);
+  }
+
+  const payload = await buildFbrPayload(rawPayload, { ...options, skipNoteValidation: true });
+
+  payload.adjustmentType = resolveAdjustmentType(rawPayload);
+  if (required.noteType === 'sale') {
+    payload.invoiceType = rawPayload.invoiceType || 'Sale Invoice';
+  } else if (required.noteType === 'credit') {
+    payload.invoiceType = 'Credit Note';
+  } else {
+    payload.invoiceType = 'Debit Note';
+  }
+
+  let noteMeta = { noteType: 'sale', originalInvoiceId: null, noteReason: null };
+  if (required.noteType !== 'sale') {
+    const original = await findOriginalByRef(payload.invoiceRefNo, options.environment);
+    validateNoteAgainstOriginal(payload, original, required.noteType);
+    noteMeta = {
+      noteType:          required.noteType,
+      noteReason:        required.noteReason,
+      originalInvoiceId: original?.id ?? null,
+      originalInvoice:   original,
+    };
+  }
+
   return { payload, noteMeta };
 }
 

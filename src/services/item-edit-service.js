@@ -5,7 +5,6 @@ const supabase = require('../supabase');
 const { WORKFLOW_STATUS } = require('../constants/invoice-status');
 const { FBR_STATUS } = require('../constants/fbr-status');
 const { getEditPolicy } = require('./invoice-edit-policy');
-const { getCancellationLimit } = require('./cancellation-limit-service');
 const { getInvoiceById, enqueueForSubmission } = require('./invoice-service');
 
 async function getItemAudits(invoiceId) {
@@ -66,14 +65,6 @@ async function requestFbrCancellation(id, { itemSnos = null, reason = null } = {
   }
 
   const cancelAmount = computeCancellationAmount(invoice, targetSnos.length < policy.items.length ? targetSnos : null, audits);
-  const limitInfo    = await getCancellationLimit({ environment: invoice.environment });
-
-  if (cancelAmount > limitInfo.remainingLimit) {
-    throw new Error(
-      `Cancellation amount (${cancelAmount.toFixed(2)}) exceeds remaining monthly limit ` +
-      `(${limitInfo.remainingLimit.toFixed(2)} of ${limitInfo.cancellationLimit.toFixed(2)})`
-    );
-  }
 
   const mockMode = isMockEnabled();
   const now      = new Date().toISOString();
@@ -111,7 +102,7 @@ async function requestFbrCancellation(id, { itemSnos = null, reason = null } = {
       .upsert(row, { onConflict: 'invoice_id,item_sno' });
   }
 
-  return { invoice: data, mockApproved: mockMode, cancelAmount, limitInfo };
+  return { invoice: data, mockApproved: mockMode, cancelAmount };
 }
 
 async function submitItemEdit(originalId, { items, noteType = 'debit', reason }, enrichPayload) {
@@ -155,6 +146,7 @@ async function submitItemEdit(originalId, { items, noteType = 'debit', reason },
   const notePayload = {
     ...basePayload,
     items: mergedItems,
+    adjustmentType: noteType,
     invoiceType: noteType === 'credit' ? 'Credit Note' : 'Debit Note',
     invoiceRefNo: original.fbr_invoice_number,
     reason: reason.trim(),
