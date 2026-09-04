@@ -1964,6 +1964,12 @@ details summary {
   cursor: not-allowed !important;
 }
 
+#invoiceDate[readonly] {
+  background: #F0F7F4;
+  color: #0A3D2E;
+  cursor: not-allowed;
+}
+
 .item-fields-advanced {
   margin-top: 8px;
 }

@@ -533,8 +533,20 @@ function setupInvoiceForm() {
 }
 
 function setTodayDate() {
-  const today = new Date().toISOString().split('T')[0];
-  document.getElementById('invoiceDate').value = today;
+  const now = new Date();
+  const today = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-');
+
+  const field = document.getElementById('invoiceDate');
+  if (!field) return;
+
+  // Locked to today: min/max keep the native picker from offering any other day.
+  field.value = today;
+  field.min = today;
+  field.max = today;
 }
 
 function defaultSaleType() {
@@ -1707,7 +1719,7 @@ function loadInvoiceIntoForm(inv) {
   setDraftUI(inv);
 
   document.getElementById('invoiceType').value = p.invoiceType || 'Sale Invoice';
-  document.getElementById('invoiceDate').value = p.invoiceDate || '';
+  setTodayDate();
   document.getElementById('withholdingRate').value = p.withholdingRate ?? p.withholding_rate ?? inv.withholding_rate ?? 0;
   document.getElementById('buyerNTNCNIC').value = p.buyerNTNCNIC || '';
   document.getElementById('buyerBusinessName').value = p.buyerBusinessName || '';

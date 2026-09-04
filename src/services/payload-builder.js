@@ -8,6 +8,14 @@ const { validateAndResolveNote, validateRequiredNoteFields, findOriginalByRef, v
 const { assertCreditNoteAllowed } = require('./doctype-service');
 const { requireValidFbrProvince } = require('../constants/provinces');
 
+// Invoices are always dated the day they are prepared — backdating is not allowed.
+function todayIsoDate() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day   = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
 function sanitizeItemForFbr(item, index) {
   const cleaned = { ...item };
 
@@ -53,6 +61,8 @@ function sanitizeItemForFbr(item, index) {
 }
 
 async function buildFbrPayload(rawPayload, { environment, clientId, skipNoteValidation = false } = {}) {
+  const dated = { ...rawPayload, invoiceDate: todayIsoDate() };
+
   let company;
   try {
     company = await getCompanySettings();
@@ -74,10 +84,10 @@ async function buildFbrPayload(rawPayload, { environment, clientId, skipNoteVali
   }
 
   if (!skipNoteValidation) {
-    await validateAndResolveNote(rawPayload, { environment });
+    await validateAndResolveNote(dated, { environment });
   }
 
-  const payload = { ...rawPayload };
+  const payload = { ...dated };
 
   payload.sellerBusinessName = company.business_name;
   payload.sellerNTNCNIC      = company.ntn;
